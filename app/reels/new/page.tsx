@@ -6,10 +6,9 @@ export default function NewReelPage() {
         Новий Reel
       </h1>
       <p className="mt-3 max-w-2xl text-base leading-7 text-[var(--muted)]">
-        У першому MVP сюжет вставляється вручну. Форма створення Reel draft буде
-        реалізована окремим маленьким завданням.
+        У першому MVP сюжет вставляється вручну. Форма створення Reel draft
+        зʼявиться в окремому task, без генерації сюжету з нуля.
       </p>
     </section>
   );
 }
-

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { AppNavigation } from "@/components/AppNavigation";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -7,12 +8,6 @@ export const metadata: Metadata = {
   description:
     "Локальний інструмент для підготовки AI Reels з ручного сюжету, сцен і фінального MP4.",
 };
-
-const navigation = [
-  { href: "/", label: "Project" },
-  { href: "/characters", label: "Characters" },
-  { href: "/reels/new", label: "New Reel" },
-];
 
 export default function RootLayout({
   children,
@@ -30,21 +25,11 @@ export default function RootLayout({
                   AI Reels Local
                 </span>
                 <span className="mt-1 block text-sm leading-5 text-[var(--muted)]">
-                  localhost MVP для vertical video workflow
+                  локальний workflow для vertical video
                 </span>
               </Link>
 
-              <nav aria-label="Основна навігація" className="flex flex-wrap gap-2">
-                {navigation.map((item) => (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    className="rounded-md border border-[var(--border)] px-3 py-2 text-sm font-medium text-[var(--foreground)] transition hover:border-[var(--accent)] hover:text-[var(--accent-strong)]"
-                  >
-                    {item.label}
-                  </Link>
-                ))}
-              </nav>
+              <AppNavigation />
             </div>
           </header>
 
@@ -54,4 +39,3 @@ export default function RootLayout({
     </html>
   );
 }
-
