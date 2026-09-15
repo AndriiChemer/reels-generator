@@ -19,10 +19,12 @@ reels generator/
         page.tsx
       [reelId]/
         page.tsx
+    actions/
+      project-settings.ts
+      characters.ts
+      reels.ts
+      scenes.ts
     api/
-      scenes/
-        from-story/
-          route.ts
       reels/
         [reelId]/
           scenes/
@@ -76,8 +78,12 @@ reels generator/
           character-john.json
           character-sofia.json
         references/
-          character-john/
-            reference-01.png
+          characters/
+            character-john/
+              reference-01.png
+          app/
+            logo.png
+            screen-home.png
         reels/
           reel-001/
             reel.json
@@ -174,13 +180,53 @@ Client components не мають імпортувати файли, які чи
 
 Один JSON-файл на персонажа. Так простіше редагувати й не переписувати великий спільний файл.
 
+### `data/projects/default/references/`
+
+Локальні reference assets, які можна передавати в сцени.
+
+Рекомендована структура:
+
+- `references/characters/character-id/` для фото або зображень персонажа;
+- `references/app/` для logo, screenshots і branding assets застосунку;
+- `references/reels/reel-id/`, якщо пізніше потрібні assets тільки для конкретного Reel.
+
+У тексті сцен такі assets можна згадувати через короткі aliases:
+
+```text
+#logo
+#screen-home
+#screen-paywall
+```
+
 ### `data/projects/default/reels/reel-001/`
 
 Дані конкретного Reel:
 
 - `reel.json` для title, ручного story, style, CTA;
-- `scenes.json` для списку сцен;
+- `scenes.json` для оригінального блоку сцен і parsed списку сцен;
 - `generations.json` для provider metadata.
+
+Приклад `scenes.json`:
+
+```json
+{
+  "sourceText": "Сцена 1:\\n@Sofia відкриває застосунок. На екрані #screen-home.",
+  "scenes": [
+    {
+      "id": "scene-01",
+      "order": 1,
+      "rawText": "@Sofia відкриває застосунок. На екрані #screen-home.",
+      "durationSeconds": 4,
+      "videoPrompt": "@Sofia відкриває застосунок. На екрані #screen-home.",
+      "characterNames": ["Sofia"],
+      "characterIds": ["character-sofia"],
+      "referenceNames": ["screen-home"],
+      "referencePaths": ["references/app/screen-home.png"],
+      "status": "draft"
+    }
+  ]
+}
+```
 
 ## Outputs
 

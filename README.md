@@ -5,10 +5,10 @@
 Цей проєкт має допомагати пройти простий шлях:
 
 ```text
-сюжет від користувача -> сцени -> AI-відео -> превʼю -> регенерація -> фінальний MP4
+сюжет від користувача -> ручний блок сцен -> AI-відео -> превʼю -> регенерація -> фінальний MP4
 ```
 
-Поточна фаза: **архітектура та документація**. Логіка застосунку, API-інтеграції та UI ще не реалізовані.
+Поточна фаза: **локальний Next.js shell і базовий JSON flow**. Проєкт уже створюється прямо в цій папці без вкладеної project-папки.
 
 ## Обраний стек
 
@@ -29,7 +29,8 @@
 Browser
   -> Next.js UI
   -> Next.js server routes / server actions
-  -> OpenAI для scene prompts / video provider APIs
+  -> video provider APIs
+  -> later OpenAI для structured prompts
   -> local filesystem
   -> FFmpeg
   -> local MP4
@@ -48,10 +49,10 @@ API-ключі не потрапляють у браузер. Дані збер�
 
 ## Що буде реалізовано пізніше
 
-Після цієї фази наступний Codex-запит може бути:
+Після поточної фази наступний Codex-запит може бути:
 
 ```text
-Read the project documentation and implement Phase 1 from IMPLEMENTATION_PLAN.md.
+Read README.md, docs/* and tasks/06-scenes-from-manual-story.md. Implement only this task.
 ```
 
-Першою технічною фазою має бути створення Next.js shell прямо у поточній папці репозиторію, базової структури папок, `.env.local.example` і локального project config без AI-інтеграцій.
+Наступний важливий крок: додати в Reel editor одне поле для всіх сцен, підтримку `@Персонаж` і `#reference` mentions, а також збереження `scenes.json` без OpenAI.

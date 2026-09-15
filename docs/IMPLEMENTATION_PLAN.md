@@ -50,28 +50,34 @@
 - Reference image paths зберігаються локально.
 - Advanced character management не реалізований.
 
-## Phase 3. Manual story to scenes
+## Phase 3. Manual scenes text, mentions and references
 
 ### Goal
 
-Додати створення Reel draft із сюжету, який користувач вставляє вручну. Якщо OpenAI key доступний, можна додати server-side дію для розбиття ручного сюжету на сцени та video prompts. Генерацію сюжету з нуля не реалізовувати.
+Додати в Reel editor одне велике поле для ручного блоку сцен. Користувач сам вставляє описи сцен, використовує `@Персонаж` для персонажів і `#reference` для logo, screenshots та інших assets.
+
+OpenAI у цій фазі не використовувати. Генерацію сюжету з нуля не реалізовувати.
 
 ### Files likely changed
 
-- `app/reels/new/page.tsx`
-- `app/api/reels/scenes/from-story/route.ts`
-- `lib/ai/openai.ts`
-- `lib/ai/prompts/scenes.ts`
+- `app/reels/[reelId]/page.tsx`
+- `components/SceneEditor.tsx`
+- `app/actions/scenes.ts`
+- `lib/scenes.ts`
+- `lib/references.ts`
 - `lib/types/reel.ts`
 
 ### Acceptance criteria
 
-- Користувач вставляє сюжет вручну.
-- Reel draft зберігає title, story, style і CTA.
-- Можна отримати 3-5 сцен із ручного сюжету.
-- OpenAI, якщо використовується, повертає валідний JSON зі сценами.
-- API key читається тільки server-side.
-- Немає генерації ідей або сюжету з нуля.
+- Reel editor має textarea для всіх сцен одним блоком.
+- `scenes.json` зберігає `sourceText` і parsed список сцен.
+- Сцени можна розділяти через `Сцена 1:`, `Scene 1:`, `1.` або порожні рядки.
+- `@Персонаж` case-insensitive звʼязується з локальним character.
+- Unknown character mentions показуються як warnings.
+- `#reference` зберігається як reference alias.
+- Unknown references показуються як warnings, але не блокують flow.
+- `videoPrompt` у V1 може дорівнювати `rawText`.
+- Немає генерації ідей, сюжету або AI split scenes.
 
 ## Phase 4. Video provider integration
 

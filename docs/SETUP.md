@@ -144,12 +144,12 @@ ffmpeg -version
 Потрібні:
 
 - fal.ai API key для першої video generation інтеграції.
-- OpenAI API key, якщо у Phase 3 ми хочемо автоматично розбивати вручну вставлений сюжет на сцени та prompts.
 
 ### Optional later
 
 Можна додати пізніше:
 
+- OpenAI API key для AI-assisted split scenes і prompt improvement;
 - генерацію ідей, hooks і сюжетів через OpenAI;
 - Google API key для Veo;
 - ключі Kling, WAN, Seedance, Runway або інших video providers;
@@ -277,5 +277,5 @@ npm install @fal-ai/client
 4. Встановити FFmpeg.
 5. Переконатися, що `ffmpeg -version` працює.
 6. Створити fal.ai API key.
-7. Створити OpenAI API key, якщо у Phase 3 буде використано LLM для розбиття ручного сюжету на сцени.
-8. Бути готовим додати ці ключі у `.env.local` після створення Next.js проєкту.
+7. Бути готовим додати fal.ai key у `.env.local`, коли дійдемо до video generation task.
+8. OpenAI API key створити пізніше, коли додаватимемо AI-assisted scenes або генерацію сюжету.

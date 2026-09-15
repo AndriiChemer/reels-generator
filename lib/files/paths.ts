@@ -12,6 +12,10 @@ export const DEFAULT_PROJECT_REFERENCES_DIR = path.join(
   DEFAULT_PROJECT_DIR,
   "references",
 );
+export const DEFAULT_PROJECT_REELS_DIR = path.join(
+  DEFAULT_PROJECT_DIR,
+  "reels",
+);
 export const DEFAULT_PROJECT_SETTINGS_PATH = path.join(
   DEFAULT_PROJECT_DIR,
   "project.json",

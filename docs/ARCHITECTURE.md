@@ -2,7 +2,7 @@
 
 ## Ціль
 
-Побудувати дуже маленький локальний застосунок для генерації вертикальних AI Reels на основі сюжету, який користувач вставляє вручну, персонажів і сцен.
+Побудувати дуже маленький локальний застосунок для генерації вертикальних AI Reels на основі сюжету, який користувач вставляє вручну, ручного блоку сцен, персонажів і reference assets.
 
 Головні принципи:
 
@@ -24,7 +24,7 @@ flowchart TD
   UI --> API[Route Handlers]
   SA --> FS[Локальна файлова система]
   API --> FS
-  SA --> OpenAI[OpenAI API]
+  SA -. пізніше .-> OpenAI[OpenAI API]
   API --> VideoProvider[Video Provider API]
   VideoProvider --> TempVideo[Тимчасовий URL відео]
   API --> Downloader[Завантаження відео локально]
@@ -56,7 +56,8 @@ Server Actions варто використовувати для простих �
 - зберегти налаштування проєкту;
 - створити або оновити персонажа;
 - зберегти вручну введений сюжет як Reel;
-- оновити текст сцени;
+- зберегти ручний блок сцен;
+- оновити текст сцени, mentions і references;
 - змінити статус або metadata, якщо це коротка синхронна дія.
 
 Причина: менше boilerplate, зручно з App Router, немає потреби створювати API endpoint для кожної простої форми.
@@ -167,17 +168,59 @@ export type Character = {
 
 `referenceImages` містить тільки локальні відносні шляхи всередині дозволеної project-папки. Це важливо, щоб пізніше безпечно передавати reference images у compatible image-to-video або reference-to-video моделі.
 
+## Сцени, mentions і references
+
+У першому MVP сцени не генеруються через LLM. Користувач вставляє один текстовий блок із описами всіх сцен у Reel editor.
+
+Рекомендований ручний формат:
+
+```text
+Сцена 1:
+@Sofia відкриває застосунок на телефоні. На екрані видно #screen-home.
+Короткий динамічний кадр, 4 секунди.
+
+Сцена 2:
+@Sofia усміхається, поруч зʼявляється #logo як reference для бренду.
+```
+
+Домовленості формату:
+
+- `@НазваПерсонажа` означає персонажа з `data/projects/default/characters/`;
+- `#назва-референсу` означає додатковий asset/reference, наприклад logo або screenshot застосунку;
+- unknown `@mentions` і `#references` показуються як warnings, але не блокують збереження;
+- `rawText` сцени залишається головним джерелом правди;
+- `videoPrompt` у V1 може дорівнювати `rawText`.
+
+Очікуваний тип:
+
+```ts
+export type ReelScene = {
+  id: string;
+  order: number;
+  rawText: string;
+  durationSeconds?: number;
+  videoPrompt: string;
+  characterNames: string[];
+  characterIds: string[];
+  referenceNames: string[];
+  referencePaths: string[];
+  status: "draft" | "queued" | "processing" | "completed" | "failed";
+  outputPath?: string;
+};
+```
+
+`scenes.json` має також зберігати `sourceText`, щоб користувач міг повернутися до оригінального pasted тексту без втрати форматування.
+
 ## LLM-виклики
 
-У першому MVP LLM **не генерує сюжет з нуля**. Користувач сам вставляє сюжет, рекламну ідею або чорновий сценарій. LLM може допомогти тільки структурно: розбити цей текст на сцени й підготувати короткі prompts для video provider.
+У першому MVP LLM **не генерує сюжет з нуля**. Користувач сам вставляє сюжет, рекламну ідею, чорновий сценарій і блок сцен.
 
-У V1 потрібні такі LLM-виклики:
+У V1 LLM-виклики не є обовʼязковими. Їх краще додати після ручного end-to-end flow.
+
+Пізніше можна додати:
 
 - `splitUserStoryIntoScenes`: розбиває вручну введений сюжет на сцени;
 - `generateVideoPrompts`: готує prompts для video provider.
-
-На пізніші фази можна додати:
-
 - `generateReelIdeas`: створює ідеї для коротких відео;
 - `generateScript`: створює hook, сюжет, короткий сценарій і CTA.
 
@@ -197,17 +240,8 @@ export type UserStoryInput = {
   style?: string;
 };
 
-export type ReelScene = {
-  id: string;
-  order: number;
-  durationSeconds: number;
-  dialogue?: string;
-  visualDescription: string;
-  videoPrompt: string;
-  characterIds: string[];
-  status: "draft" | "queued" | "processing" | "completed" | "failed";
-  outputPath?: string;
-};
+// Для LLM-фази можна використати ReelScene з секції вище
+// і додати dialogue / visualDescription тільки якщо вони реально потрібні UI.
 ```
 
 LLM відповіді треба парсити як JSON і валідувати мінімально: наявність обовʼязкових полів, очікувані типи, непорожній список сцен.
@@ -222,6 +256,7 @@ export type VideoGenerationInput = {
   durationSeconds: number;
   aspectRatio: "9:16";
   characterReferencePaths?: string[];
+  assetReferencePaths?: string[];
 };
 
 export type VideoGenerationResult = {
