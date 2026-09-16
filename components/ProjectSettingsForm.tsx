@@ -56,13 +56,13 @@ const fields = [
   },
   {
     name: "defaultCta",
-    label: "Default CTA",
+    label: "Типовий CTA",
     placeholder: "Наприклад: Завантажити застосунок",
   },
   {
     name: "contentStyle",
     label: "Стиль контенту",
-    placeholder: "UGC, діалог, гумор, storytelling",
+    placeholder: "UGC, діалог, гумор, сторітелінг",
   },
 ] satisfies ProjectSettingsField[];
 
@@ -121,7 +121,7 @@ export function ProjectSettingsForm({ settings }: ProjectSettingsFormProps) {
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
         <button
-          className="w-fit rounded-md bg-[var(--accent)] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[var(--accent-strong)] disabled:cursor-not-allowed disabled:opacity-70"
+          className="w-full rounded-md bg-[var(--accent)] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[var(--accent-strong)] disabled:cursor-not-allowed disabled:opacity-70 sm:w-fit"
           disabled={isPending}
           type="submit"
         >

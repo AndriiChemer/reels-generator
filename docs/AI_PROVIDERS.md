@@ -156,6 +156,7 @@ export type VideoGenerationInput = {
   durationSeconds: number;
   aspectRatio: "9:16";
   characterReferencePaths?: string[];
+  assetReferencePaths?: string[];
 };
 
 export type VideoGenerationResult = {
@@ -179,6 +180,8 @@ export interface VideoProvider {
 ```bash
 OPENAI_API_KEY=
 FAL_KEY=
+FAL_VIDEO_MODEL=fal-ai/fast-svd/text-to-video
+FAL_ESTIMATED_COST_PER_SECOND_USD=
 GOOGLE_API_KEY=
 VIDEO_PROVIDER=fal
 ```
@@ -194,6 +197,14 @@ VIDEO_PROVIDER=fal
 - durationSeconds;
 - estimatedCostUsd;
 - createdAt.
+
+Якщо provider не повертає вартість, локальний MVP може оцінити її через:
+
+```bash
+FAL_ESTIMATED_COST_PER_SECOND_USD=0.05
+```
+
+Якщо змінна порожня, `estimatedCostUsd` залишається unknown і UI не має падати.
 
 UI для Reel editor може підсумовувати `estimatedCostUsd` по всіх сценах:
 

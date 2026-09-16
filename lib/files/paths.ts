@@ -1,6 +1,9 @@
 import path from "node:path";
 
 export const DATA_DIR = path.join(process.cwd(), "data");
+export const OUTPUTS_DIR = path.join(process.cwd(), "outputs");
+export const OUTPUT_SCENES_DIR = path.join(OUTPUTS_DIR, "scenes");
+export const OUTPUT_REELS_DIR = path.join(OUTPUTS_DIR, "reels");
 export const PROJECTS_DIR = path.join(DATA_DIR, "projects");
 export const DEFAULT_PROJECT_ID = "default";
 export const DEFAULT_PROJECT_DIR = path.join(PROJECTS_DIR, DEFAULT_PROJECT_ID);

@@ -169,11 +169,16 @@ ffmpeg -version
 ```bash
 OPENAI_API_KEY=
 FAL_KEY=
+FAL_VIDEO_MODEL=fal-ai/fast-svd/text-to-video
+FAL_ESTIMATED_COST_PER_SECOND_USD=
 GOOGLE_API_KEY=
 VIDEO_PROVIDER=fal
 ```
 
 `GOOGLE_API_KEY` можна залишити порожнім у V1.
+
+`FAL_ESTIMATED_COST_PER_SECOND_USD` можна залишити порожнім. Якщо хочеш бачити
+локальну оцінку витрат, вкажи приблизну ціну однієї секунди генерації у USD.
 
 Правила:
 

@@ -34,6 +34,38 @@ export async function readReelDraft(reelId: string) {
   return readJsonFile<ReelDraft>(getReelFilePath(reelId));
 }
 
+export async function updateReelFinalRender(
+  reelId: string,
+  result:
+    | {
+        finalOutputPath: string;
+        finalRenderError?: undefined;
+      }
+    | {
+        finalOutputPath?: undefined;
+        finalRenderError: string;
+      },
+) {
+  const reel = await readReelDraft(reelId);
+
+  if (!reel) {
+    throw new Error("Reel draft does not exist.");
+  }
+
+  const now = new Date().toISOString();
+  const nextReel: ReelDraft = {
+    ...reel,
+    finalOutputPath: result.finalOutputPath ?? reel.finalOutputPath,
+    finalRenderedAt: result.finalOutputPath ? now : reel.finalRenderedAt,
+    finalRenderError: result.finalRenderError,
+    updatedAt: now,
+  };
+
+  await writeJsonFile(getReelFilePath(reelId), nextReel);
+
+  return nextReel;
+}
+
 export async function listReelDrafts() {
   assertInsideRoot(DATA_DIR, DEFAULT_PROJECT_REELS_DIR);
 
@@ -61,14 +93,23 @@ export async function listReelDrafts() {
 
 export function getReelFilePath(reelId: string) {
   const safeReelId = sanitizeReelId(reelId);
-  const filePath = path.join(DEFAULT_PROJECT_REELS_DIR, safeReelId, REEL_FILE_NAME);
+  const filePath = path.join(getReelDirectoryPath(safeReelId), REEL_FILE_NAME);
 
   assertInsideRoot(DEFAULT_PROJECT_REELS_DIR, filePath);
 
   return filePath;
 }
 
-function sanitizeReelId(reelId: string) {
+export function getReelDirectoryPath(reelId: string) {
+  const safeReelId = sanitizeReelId(reelId);
+  const directoryPath = path.join(DEFAULT_PROJECT_REELS_DIR, safeReelId);
+
+  assertInsideRoot(DEFAULT_PROJECT_REELS_DIR, directoryPath);
+
+  return directoryPath;
+}
+
+export function sanitizeReelId(reelId: string) {
   const sanitized = reelId
     .toLowerCase()
     .replace(/[^a-z0-9-]+/g, "-")
@@ -103,4 +144,3 @@ function optionalText(value: string | undefined) {
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {
   return error instanceof Error && "code" in error;
 }
-

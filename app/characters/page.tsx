@@ -1,5 +1,6 @@
 import { deleteCharacterAction } from "@/app/actions/characters";
 import { CharacterForm } from "@/components/CharacterForm";
+import { DeleteCharacterButton } from "@/components/DeleteCharacterButton";
 import { listCharacters } from "@/lib/characters";
 
 export const dynamic = "force-dynamic";
@@ -13,14 +14,14 @@ export default async function CharactersPage() {
       <section className="grid gap-5">
         <div className="rounded-lg border border-[var(--border)] bg-[var(--panel)] p-6">
           <p className="text-sm font-medium text-[var(--accent-strong)]">
-            Task 04
+            Крок 04
           </p>
           <h1 className="mt-2 text-3xl font-semibold tracking-normal">
             Персонажі
           </h1>
           <p className="mt-3 max-w-2xl text-base leading-7 text-[var(--muted)]">
             Створи повторюваних персонажів, яких пізніше можна буде привʼязати
-            до сцен і reference images для video provider.
+            до сцен, референс-зображень і відео-провайдера.
           </p>
         </div>
 
@@ -36,7 +37,7 @@ export default async function CharactersPage() {
         <div className="rounded-lg border border-[var(--border)] bg-[var(--panel)] p-5">
           <h2 className="text-base font-semibold">Збережені персонажі</h2>
           <p className="mt-2 text-sm leading-6 text-[var(--muted)]">
-            JSON-файли лежать у `data/projects/default/characters/`.
+            JSON-файли лежать у data/projects/default/characters/.
           </p>
         </div>
 
@@ -63,12 +64,7 @@ export default async function CharactersPage() {
                 </div>
                 <form action={deleteCharacterAction}>
                   <input name="characterId" type="hidden" value={character.id} />
-                  <button
-                    className="rounded-md border border-red-200 px-3 py-2 text-sm font-medium text-red-700 transition hover:bg-red-50"
-                    type="submit"
-                  >
-                    Видалити
-                  </button>
+                  <DeleteCharacterButton />
                 </form>
               </div>
 

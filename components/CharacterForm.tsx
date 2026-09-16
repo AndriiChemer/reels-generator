@@ -78,15 +78,17 @@ export function CharacterForm({ character }: CharacterFormProps) {
 
       <TextAreaField
         error={state.errors?.referenceImagesText}
-        label="Reference images"
+        label="Референс-зображення"
         name="referenceImagesText"
-        placeholder={"references/sofia/reference-01.png\nreferences/sofia/reference-02.png"}
+        placeholder={
+          "references/characters/sofia/reference-01.png\nreferences/characters/sofia/reference-02.png"
+        }
         value={character?.referenceImages.join("\n")}
       />
 
       <TextField
         error={state.errors?.voiceId}
-        label="Voice ID"
+        label="ID голосу"
         name="voiceId"
         placeholder="Опційно для майбутньої озвучки"
         value={character?.voiceId}
@@ -94,7 +96,7 @@ export function CharacterForm({ character }: CharacterFormProps) {
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
         <button
-          className="w-fit rounded-md bg-[var(--accent)] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[var(--accent-strong)] disabled:cursor-not-allowed disabled:opacity-70"
+          className="w-full rounded-md bg-[var(--accent)] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[var(--accent-strong)] disabled:cursor-not-allowed disabled:opacity-70 sm:w-fit"
           disabled={isPending}
           type="submit"
         >

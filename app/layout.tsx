@@ -25,7 +25,7 @@ export default function RootLayout({
                   AI Reels Local
                 </span>
                 <span className="mt-1 block text-sm leading-5 text-[var(--muted)]">
-                  локальний workflow для vertical video
+                  локальний процес для вертикального відео
                 </span>
               </Link>
 
