@@ -21,6 +21,11 @@ coverage/
 data/
 outputs/
 
+# Local visual source files; keep only the folder structure in Git.
+references/**/*
+!references/**/
+!references/**/.gitkeep
+
 # Logs
 logs/
 *.log

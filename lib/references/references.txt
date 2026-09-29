@@ -1,0 +1,4 @@
+references/characters/mia/mia.png
+references/characters/ethan/ethan.png
+references/app/logo/logo.png
+references/app/screens/dashboard.png

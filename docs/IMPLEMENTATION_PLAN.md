@@ -40,7 +40,7 @@
 - `lib/types/character.ts`
 - `lib/files/json.ts`
 - `data/projects/default/characters/`
-- `data/projects/default/references/`
+- `references/characters/`
 
 ### Acceptance criteria
 

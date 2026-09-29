@@ -1,4 +1,5 @@
 import { readOutputMediaFile, resolveOutputMediaPath } from "@/lib/files/media";
+import path from "node:path";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -29,11 +30,18 @@ export async function GET(
 }
 
 function readContentType(filePath: string) {
-  if (filePath.toLowerCase().endsWith(".mp4")) {
-    return "video/mp4";
+  switch (path.extname(filePath).toLowerCase()) {
+    case ".mp3":
+      return "audio/mpeg";
+    case ".mp4":
+      return "video/mp4";
+    case ".ogg":
+      return "audio/ogg";
+    case ".wav":
+      return "audio/wav";
+    default:
+      return "application/octet-stream";
   }
-
-  return "application/octet-stream";
 }
 
 function readErrorMessage(error: unknown) {

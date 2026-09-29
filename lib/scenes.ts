@@ -8,7 +8,11 @@ import {
 } from "@/lib/reels";
 import type { Character } from "@/lib/types/character";
 import type { GenerationStatus } from "@/lib/types/generation";
-import type { ReelScene, ReelScenesDocument } from "@/lib/types/reel";
+import type {
+  ReelScene,
+  ReelScenesDocument,
+  SceneAudioOutput,
+} from "@/lib/types/reel";
 
 const SCENES_FILE_NAME = "scenes.json";
 const DEFAULT_SCENE_DURATION_SECONDS = 4;
@@ -128,6 +132,40 @@ export async function updateReelSceneStatus(
   return nextScene;
 }
 
+export async function updateReelSceneAudio(
+  reelId: string,
+  sceneId: string,
+  audioOutput: SceneAudioOutput,
+) {
+  const scenesDocument = await readReelScenes(reelId);
+
+  if (!scenesDocument) {
+    return null;
+  }
+
+  const scene = findReelScene(scenesDocument, sceneId);
+
+  if (!scene) {
+    return null;
+  }
+
+  const nextScene: ReelScene = {
+    ...scene,
+    audioOutput,
+  };
+  const nextDocument: ReelScenesDocument = {
+    ...scenesDocument,
+    scenes: scenesDocument.scenes.map((currentScene) =>
+      currentScene.id === sceneId ? nextScene : currentScene,
+    ),
+    updatedAt: new Date().toISOString(),
+  };
+
+  await writeJsonFile(getReelScenesFilePath(reelId), nextDocument);
+
+  return nextScene;
+}
+
 export function getReelScenesFilePath(reelId: string) {
   const safeReelId = sanitizeReelId(reelId);
   const filePath = path.join(
@@ -144,6 +182,8 @@ function parseManualScenes(
   referenceAssets: ReferenceAsset[],
 ) {
   return splitSceneBlocks(sourceText).map((rawText, index): ReelScene => {
+    const { audioText, videoText } = splitAudioSection(rawText);
+    const durationSeconds = parseDurationSeconds(rawText);
     const characterNames = uniqueValues(extractCharacterMentions(rawText));
     const referenceNames = uniqueValues(extractReferenceMentions(rawText));
 
@@ -151,8 +191,13 @@ function parseManualScenes(
       id: `scene-${String(index + 1).padStart(2, "0")}`,
       order: index + 1,
       rawText,
-      durationSeconds: parseDurationSeconds(rawText),
-      videoPrompt: rawText,
+      durationSeconds,
+      videoPrompt: videoText,
+      audioPlan: buildSceneAudioPlan({
+        audioText,
+        durationSeconds,
+        videoText,
+      }),
       characterNames,
       characterIds: resolveCharacterIds(characterNames, characters),
       referenceNames,
@@ -164,6 +209,202 @@ function parseManualScenes(
       status: "draft",
     };
   });
+}
+
+function splitAudioSection(rawText: string) {
+  const lines = rawText.replace(/\r\n/g, "\n").split("\n");
+  const audioHeaderIndex = lines.findIndex((line) =>
+    /^\s*(?:звук|аудіо|audio|sound)\s*:?\s*(.*)$/iu.test(line),
+  );
+
+  if (audioHeaderIndex < 0) {
+    return {
+      audioText: "",
+      videoText: rawText.trim(),
+    };
+  }
+
+  const audioHeaderMatch = lines[audioHeaderIndex].match(
+    /^\s*(?:звук|аудіо|audio|sound)\s*:?\s*(.*)$/iu,
+  );
+  const audioLines = [
+    audioHeaderMatch?.[1] ?? "",
+    ...lines.slice(audioHeaderIndex + 1),
+  ];
+
+  return {
+    audioText: audioLines.join("\n").trim(),
+    videoText: lines.slice(0, audioHeaderIndex).join("\n").trim(),
+  };
+}
+
+function buildSceneAudioPlan({
+  audioText,
+  durationSeconds,
+  videoText,
+}: {
+  audioText: string;
+  durationSeconds: number;
+  videoText: string;
+}): ReelScene["audioPlan"] {
+  const trimmedAudioText = audioText.trim();
+
+  if (!trimmedAudioText) {
+    const speechPolicy = detectSpeechPolicy(videoText);
+
+    return {
+      source: "auto",
+      prompt: buildAutomaticAudioPrompt(videoText, durationSeconds, speechPolicy),
+      durationSeconds,
+      speechPolicy,
+      ambiencePrompt: "натуральна атмосфера сцени без різких шумів",
+      musicPrompt: "легка фонова музика, що не перекриває дію",
+      sfx: [],
+    };
+  }
+
+  const cues = parseAudioCues(trimmedAudioText);
+  const speechPolicy = detectSpeechPolicy(trimmedAudioText);
+  const ambiencePrompt = joinCueDescriptions(
+    cues.filter((cue) => isAmbienceCue(cue.description)),
+  );
+  const musicPrompt = joinCueDescriptions(
+    cues.filter((cue) => isMusicCue(cue.description)),
+  );
+  const voicePrompt = joinCueDescriptions(
+    cues.filter((cue) => isVoiceCue(cue.description)),
+  );
+  const sfx = cues.filter(
+    (cue) =>
+      !isAmbienceCue(cue.description) &&
+      !isMusicCue(cue.description) &&
+      !isVoiceCue(cue.description) &&
+      !isNoSpeechCue(cue.description),
+  );
+
+  return {
+    source: "explicit",
+    prompt: buildExplicitAudioPrompt(trimmedAudioText, durationSeconds),
+    durationSeconds,
+    speechPolicy,
+    ambiencePrompt: ambiencePrompt || undefined,
+    musicPrompt: musicPrompt || undefined,
+    voicePrompt: voicePrompt || undefined,
+    sfx,
+    rawText: trimmedAudioText,
+  };
+}
+
+function parseAudioCues(audioText: string) {
+  return audioText
+    .split("\n")
+    .map((line) => parseAudioCue(line))
+    .filter((cue): cue is NonNullable<ReturnType<typeof parseAudioCue>> =>
+      Boolean(cue),
+    );
+}
+
+function parseAudioCue(line: string) {
+  const cleanedLine = line
+    .trim()
+    .replace(/^[-*•]\s*/, "")
+    .trim();
+
+  if (!cleanedLine) {
+    return null;
+  }
+
+  const timedCueMatch = cleanedLine.match(
+    /^(\d+(?:[.,]\d+)?)\s*[-–—]\s*(\d+(?:[.,]\d+)?)\s*:?\s*(.+)$/u,
+  );
+
+  if (!timedCueMatch) {
+    return {
+      description: cleanedLine,
+    };
+  }
+
+  return {
+    description: timedCueMatch[3].trim(),
+    startSeconds: Number.parseFloat(timedCueMatch[1].replace(",", ".")),
+    endSeconds: Number.parseFloat(timedCueMatch[2].replace(",", ".")),
+  };
+}
+
+function buildAutomaticAudioPrompt(
+  videoText: string,
+  durationSeconds: number,
+  speechPolicy: ReelScene["audioPlan"]["speechPolicy"],
+) {
+  const speechInstruction =
+    speechPolicy === "dialogue_expected"
+      ? "Діалог або голос буде окремим TTS-шаром; тут створи лише ambience, foley і тиху музику."
+      : "Без мовлення, без голосу і без вокалу.";
+
+  return [
+    `Створи цілісний audio bed на ${durationSeconds} секунд для вертикального Reel.`,
+    `Візуальна дія: ${compactPromptText(videoText)}.`,
+    "Додай натуральну атмосферу, синхронні foley/SFX і м'яку фонову музику.",
+    speechInstruction,
+  ].join(" ");
+}
+
+function buildExplicitAudioPrompt(audioText: string, durationSeconds: number) {
+  return [
+    `Створи цілісний audio bed на ${durationSeconds} секунд для вертикального Reel.`,
+    "Дотримуйся цього audio plan:",
+    compactPromptText(audioText),
+  ].join(" ");
+}
+
+function detectSpeechPolicy(text: string): ReelScene["audioPlan"]["speechPolicy"] {
+  if (/\b(?:no speech|no voice|without speech)\b/iu.test(text)) {
+    return "no_speech";
+  }
+
+  if (/(?:без\s+мовлення|без\s+голосу|голосу\s+немає|без\s+діалогу)/iu.test(text)) {
+    return "no_speech";
+  }
+
+  if (/(?:говорить|каже|сказав|сказала|діалог|реплік|voice|speech|dialogue)/iu.test(text)) {
+    return "dialogue_expected";
+  }
+
+  if (/[«"].+[»"]/u.test(text)) {
+    return "dialogue_expected";
+  }
+
+  return "no_speech";
+}
+
+function joinCueDescriptions(cues: ReelScene["audioPlan"]["sfx"]) {
+  return cues.map((cue) => cue.description).join("; ");
+}
+
+function isAmbienceCue(description: string) {
+  return /(ambien|атмосфер|кімнат|вулиц|шум|дощ|вітер|кафе|кухн)/iu.test(
+    description,
+  );
+}
+
+function isMusicCue(description: string) {
+  return /(music|bgm|melody|музик|мелод|саундтрек|фонова)/iu.test(description);
+}
+
+function isVoiceCue(description: string) {
+  return /(voice|speech|dialogue|голос|мовлен|діалог|реплік|говорить|каже)/iu.test(
+    description,
+  );
+}
+
+function isNoSpeechCue(description: string) {
+  return /(без\s+мовлення|без\s+голосу|голосу\s+немає|без\s+діалогу|no speech|no voice)/iu.test(
+    description,
+  );
+}
+
+function compactPromptText(value: string) {
+  return value.replace(/\s+/g, " ").trim();
 }
 
 function splitSceneBlocks(sourceText: string) {

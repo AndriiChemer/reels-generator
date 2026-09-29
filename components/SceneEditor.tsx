@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useActionState } from "react";
 import { saveScenesAction } from "@/app/actions/scenes";
+import { AudioPreview } from "@/components/AudioPreview";
 import { VideoPreview } from "@/components/VideoPreview";
 import type { ScenesFormState } from "@/app/actions/scenes";
 import {
@@ -13,9 +14,14 @@ import type { ReferenceAsset } from "@/lib/references";
 import type { SceneWarning } from "@/lib/scenes";
 import type { Character } from "@/lib/types/character";
 import type { GenerationMetadata } from "@/lib/types/generation";
-import type { ReelScene, ReelScenesDocument } from "@/lib/types/reel";
+import type {
+  ReelBackgroundAudioOutput,
+  ReelScene,
+  ReelScenesDocument,
+} from "@/lib/types/reel";
 
 type SceneEditorProps = {
+  backgroundAudio?: ReelBackgroundAudioOutput;
   characters: Character[];
   finalOutputPath?: string;
   finalRenderError?: string;
@@ -32,6 +38,7 @@ const initialScenesFormState: ScenesFormState = {
 };
 
 export function SceneEditor({
+  backgroundAudio,
   characters,
   finalOutputPath,
   finalRenderError,
@@ -73,7 +80,7 @@ export function SceneEditor({
             id="scenes-source-text"
             name="sourceText"
             placeholder={
-              "Сцена 1:\n@Sofia відкриває застосунок. На екрані видно #screen-home.\nКадр 4 секунди, вертикальний UGC-стиль.\n\nСцена 2:\n@Sofia показує результат. #logo використати як референс для бренду."
+              "Сцена 1:\n@mia відкриває застосунок. На екрані видно #screen-home.\nКадр 4 секунди, вертикальний UGC-стиль.\n\nЗвук:\n- 0.0-4.0: тиха фонова музика\n- 1.0-2.5: звук свайпу і легкий whoosh\n- без голосу\n\nСцена 2:\n@mia показує результат. #logo використати як референс для бренду."
             }
             rows={12}
             required
@@ -132,6 +139,12 @@ export function SceneEditor({
             scenes={scenes}
           />
 
+          <BackgroundMusicGenerator
+            initialBackgroundAudio={backgroundAudio}
+            reelId={reelId}
+            scenes={scenes}
+          />
+
           <CostSummary generations={generationRecords} />
 
           {scenes.map((scene) => (
@@ -152,6 +165,105 @@ export function SceneEditor({
           </p>
         </div>
       )}
+    </section>
+  );
+}
+
+function BackgroundMusicGenerator({
+  initialBackgroundAudio,
+  reelId,
+  scenes,
+}: {
+  initialBackgroundAudio?: ReelBackgroundAudioOutput;
+  reelId: string;
+  scenes: ReelScene[];
+}) {
+  const [backgroundAudio, setBackgroundAudio] = useState(initialBackgroundAudio);
+  const [errorMessage, setErrorMessage] = useState("");
+  const [isGenerating, setIsGenerating] = useState(false);
+  const durationSeconds = scenes.reduce(
+    (total, scene) => total + scene.durationSeconds,
+    0,
+  );
+  const canGenerate = durationSeconds >= 3 && durationSeconds <= 600;
+
+  async function handleGenerate() {
+    setIsGenerating(true);
+    setErrorMessage("");
+
+    try {
+      const response = await fetch(`/api/reels/${reelId}/audio/music/generate`, {
+        method: "POST",
+      });
+      const payload = (await response.json()) as MusicGenerationApiResponse;
+
+      if (!response.ok || !payload.backgroundAudio) {
+        setErrorMessage(payload.error || "Не вдалося згенерувати фонову музику.");
+        return;
+      }
+
+      setBackgroundAudio(payload.backgroundAudio);
+    } catch (error) {
+      setErrorMessage(readClientError(error));
+    } finally {
+      setIsGenerating(false);
+    }
+  }
+
+  return (
+    <section className="rounded-lg border border-[var(--border)] bg-[var(--panel)] p-5">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h2 className="text-lg font-semibold">Фонова музика</h2>
+          <p className="mt-1 text-sm leading-6 text-[var(--muted)]">
+            Одна інструментальна доріжка для всього Reel. Вона буде тихо
+            зміксована з вибірковими SFX під час фінального рендеру.
+          </p>
+          <p className="mt-1 text-xs leading-5 text-[var(--muted)]">
+            Тривалість Reel: {durationSeconds}s. Для генерації потрібен доступ
+            Music Generation у ключі ElevenLabs.
+          </p>
+        </div>
+        <button
+          className="w-full rounded-md border border-[var(--border)] bg-white px-4 py-3 text-sm font-semibold transition hover:border-[var(--accent)] hover:text-[var(--accent-strong)] disabled:cursor-not-allowed disabled:opacity-60 sm:w-fit"
+          disabled={isGenerating || !canGenerate}
+          onClick={handleGenerate}
+          type="button"
+        >
+          {isGenerating
+            ? "Генерація музики..."
+            : backgroundAudio
+              ? "Згенерувати музику ще раз"
+              : "Згенерувати фонову музику"}
+        </button>
+      </div>
+
+      {!canGenerate ? (
+        <p className="mt-3 text-sm leading-6 text-amber-800">
+          Музику можна створити для Reel тривалістю від 3 до 600 секунд.
+        </p>
+      ) : null}
+
+      {backgroundAudio ? (
+        <div className="mt-3 grid gap-1 text-xs leading-5 text-[var(--muted)]">
+          <p>
+            Провайдер: {backgroundAudio.provider}; модель: {backgroundAudio.model};
+            тривалість: {backgroundAudio.durationSeconds}s
+          </p>
+          {typeof backgroundAudio.characterCost === "number" ? (
+            <p>Облік ElevenLabs: {backgroundAudio.characterCost}</p>
+          ) : null}
+          <p className="break-all">Файл: {backgroundAudio.outputPath}</p>
+        </div>
+      ) : null}
+
+      <AudioPreview outputPath={backgroundAudio?.outputPath} />
+
+      {errorMessage ? (
+        <p aria-live="polite" className="mt-3 text-sm font-medium text-red-700">
+          {errorMessage}
+        </p>
+      ) : null}
     </section>
   );
 }
@@ -210,7 +322,8 @@ function FinalReelRenderer({
         <div>
           <h2 className="text-lg font-semibold">Фінальний MP4</h2>
           <p className="mt-1 text-sm leading-6 text-[var(--muted)]">
-            FFmpeg склеїть готові сцени у вертикальний 1080x1920 MP4.
+            FFmpeg склеїть готові сцени, зміксує доступні SFX і фонову музику
+            у вертикальний 1080x1920 MP4.
           </p>
           <p className="mt-1 text-xs leading-5 text-[var(--muted)]">
             Готові сцени: {completedScenesCount} / {scenes.length}
@@ -302,6 +415,15 @@ function SceneCard({
         />
       </div>
 
+      <AudioPlanSummary audioPlan={scene.audioPlan} />
+
+      <GenerateSceneSoundEffectButton
+        audioPlan={scene.audioPlan}
+        initialAudioOutput={scene.audioOutput}
+        reelId={reelId}
+        sceneId={scene.id}
+      />
+
       <GenerateSceneButton
         initialGeneration={generation}
         onGenerationChange={onGenerationChange}
@@ -310,6 +432,186 @@ function SceneCard({
         sceneStatus={scene.status}
       />
     </article>
+  );
+}
+
+function GenerateSceneSoundEffectButton({
+  audioPlan,
+  initialAudioOutput,
+  reelId,
+  sceneId,
+}: {
+  audioPlan: ReelScene["audioPlan"];
+  initialAudioOutput?: ReelScene["audioOutput"];
+  reelId: string;
+  sceneId: string;
+}) {
+  const [audioOutput, setAudioOutput] = useState(initialAudioOutput);
+  const [errorMessage, setErrorMessage] = useState("");
+  const [isGenerating, setIsGenerating] = useState(false);
+  const canGenerate =
+    audioPlan.source === "explicit" && audioPlan.sfx.length > 0;
+
+  async function handleGenerate() {
+    setIsGenerating(true);
+    setErrorMessage("");
+
+    try {
+      const response = await fetch(
+        `/api/reels/${reelId}/scenes/${sceneId}/audio/generate`,
+        { method: "POST" },
+      );
+      const payload = (await response.json()) as AudioGenerationApiResponse;
+
+      if (!response.ok || !payload.audioOutput) {
+        setErrorMessage(payload.error || "Не вдалося згенерувати SFX.");
+        return;
+      }
+
+      setAudioOutput(payload.audioOutput);
+    } catch (error) {
+      setErrorMessage(readClientError(error));
+    } finally {
+      setIsGenerating(false);
+    }
+  }
+
+  return (
+    <section className="mt-4 border-t border-[var(--border)] pt-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h4 className="text-sm font-semibold">Вибіркові SFX</h4>
+          <p className="mt-1 text-xs leading-5 text-[var(--muted)]">
+            Створюються лише для ручних звукових подій. Музика всього Reel буде
+            додана окремим етапом.
+          </p>
+        </div>
+        <button
+          className="w-full rounded-md border border-[var(--border)] bg-white px-4 py-2 text-sm font-semibold transition hover:border-[var(--accent)] hover:text-[var(--accent-strong)] disabled:cursor-not-allowed disabled:opacity-60 sm:w-fit"
+          disabled={isGenerating || !canGenerate}
+          onClick={handleGenerate}
+          type="button"
+        >
+          {isGenerating
+            ? "Генерація SFX..."
+            : audioOutput
+              ? "Згенерувати SFX ще раз"
+              : "Згенерувати SFX"}
+        </button>
+      </div>
+
+      {!canGenerate ? (
+        <p className="mt-3 text-xs leading-5 text-[var(--muted)]">
+          Додай блок <span className="font-semibold">Звук:</span> з конкретним
+          SFX, наприклад: <span className="font-semibold">1.0-2.5: звук
+          наливання чаю</span>.
+        </p>
+      ) : null}
+
+      {audioOutput ? (
+        <div className="mt-3 grid gap-1 text-xs leading-5 text-[var(--muted)]">
+          <p>
+            Провайдер: {audioOutput.provider}; модель: {audioOutput.model};
+            тривалість: {audioOutput.durationSeconds}s
+          </p>
+          {typeof audioOutput.characterCost === "number" ? (
+            <p>Облік ElevenLabs: {audioOutput.characterCost}</p>
+          ) : null}
+          <p className="break-all">Файл: {audioOutput.outputPath}</p>
+        </div>
+      ) : null}
+
+      <AudioPreview outputPath={audioOutput?.outputPath} />
+
+      {errorMessage ? (
+        <p aria-live="polite" className="mt-3 text-sm font-medium text-red-700">
+          {errorMessage}
+        </p>
+      ) : null}
+    </section>
+  );
+}
+
+function AudioPlanSummary({
+  audioPlan,
+}: {
+  audioPlan?: ReelScene["audioPlan"];
+}) {
+  if (!audioPlan) {
+    return (
+      <section className="mt-4 rounded-md border border-amber-200 bg-amber-50 p-4">
+        <h4 className="text-sm font-semibold text-amber-900">Audio plan</h4>
+        <p className="mt-2 text-sm leading-6 text-amber-900">
+          Для цієї сцени ще немає audio plan. Перезбережи сцени, щоб створити
+          його автоматично.
+        </p>
+      </section>
+    );
+  }
+
+  return (
+    <section className="mt-4 rounded-md border border-[var(--border)] bg-white p-4">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h4 className="text-sm font-semibold">Audio plan</h4>
+          <p className="mt-1 text-xs leading-5 text-[var(--muted)]">
+            {audioPlan.source === "explicit"
+              ? "Ручний блок Звук:"
+              : "Автоматично з опису сцени"}
+            {" · "}
+            {formatSpeechPolicy(audioPlan.speechPolicy)}
+          </p>
+        </div>
+        <span className="w-fit rounded-md border border-[var(--border)] px-2 py-1 text-xs font-semibold text-[var(--muted)]">
+          {audioPlan.durationSeconds}s
+        </span>
+      </div>
+
+      <p className="mt-3 text-sm leading-6 text-[var(--muted)]">
+        {audioPlan.prompt}
+      </p>
+
+      <div className="mt-3 grid gap-2 text-xs leading-5 text-[var(--muted)]">
+        {audioPlan.ambiencePrompt ? (
+          <p>
+            <span className="font-semibold text-[var(--foreground)]">
+              Атмосфера:
+            </span>{" "}
+            {audioPlan.ambiencePrompt}
+          </p>
+        ) : null}
+        {audioPlan.musicPrompt ? (
+          <p>
+            <span className="font-semibold text-[var(--foreground)]">
+              Музика:
+            </span>{" "}
+            {audioPlan.musicPrompt}
+          </p>
+        ) : null}
+        {audioPlan.voicePrompt ? (
+          <p>
+            <span className="font-semibold text-[var(--foreground)]">
+              Голос:
+            </span>{" "}
+            {audioPlan.voicePrompt}
+          </p>
+        ) : null}
+      </div>
+
+      {audioPlan.sfx.length > 0 ? (
+        <ul className="mt-3 grid gap-1 text-xs leading-5 text-[var(--muted)]">
+          {audioPlan.sfx.map((cue, index) => (
+            <li key={`${cue.description}-${index}`}>
+              <span className="font-semibold text-[var(--foreground)]">
+                SFX:
+              </span>{" "}
+              {formatCueTime(cue)}
+              {cue.description}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </section>
   );
 }
 
@@ -594,6 +896,16 @@ type GenerationApiResponse = {
   error?: string;
 };
 
+type AudioGenerationApiResponse = {
+  audioOutput?: NonNullable<ReelScene["audioOutput"]>;
+  error?: string;
+};
+
+type MusicGenerationApiResponse = {
+  backgroundAudio?: ReelBackgroundAudioOutput;
+  error?: string;
+};
+
 type RenderApiResponse = {
   finalOutputPath?: string;
   error?: string;
@@ -633,6 +945,27 @@ function formatStatus(status: ReelScene["status"]) {
     default:
       return "чернетка";
   }
+}
+
+function formatSpeechPolicy(policy: ReelScene["audioPlan"]["speechPolicy"]) {
+  switch (policy) {
+    case "dialogue_expected":
+      return "голос/діалог окремим шаром";
+    case "no_speech":
+    default:
+      return "без голосу";
+  }
+}
+
+function formatCueTime(cue: ReelScene["audioPlan"]["sfx"][number]) {
+  if (
+    typeof cue.startSeconds !== "number" ||
+    typeof cue.endSeconds !== "number"
+  ) {
+    return "";
+  }
+
+  return `${cue.startSeconds}-${cue.endSeconds}s: `;
 }
 
 function readClientError(error: unknown) {

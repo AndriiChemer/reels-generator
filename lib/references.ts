@@ -1,8 +1,7 @@
 import { readdir } from "node:fs/promises";
 import path from "node:path";
 import {
-  DEFAULT_PROJECT_DIR,
-  DEFAULT_PROJECT_REFERENCES_DIR,
+  REFERENCES_DIR,
   assertInsideRoot,
 } from "@/lib/files/paths";
 
@@ -19,9 +18,9 @@ export type ReferenceAsset = {
 };
 
 export async function listReferenceAssets(): Promise<ReferenceAsset[]> {
-  assertInsideRoot(DEFAULT_PROJECT_DIR, DEFAULT_PROJECT_REFERENCES_DIR);
+  assertInsideRoot(process.cwd(), REFERENCES_DIR);
 
-  const filePaths = await listReferenceFiles(DEFAULT_PROJECT_REFERENCES_DIR);
+  const filePaths = await listReferenceFiles(REFERENCES_DIR);
 
   return filePaths
     .map((filePath) => ({
@@ -54,7 +53,7 @@ async function listReferenceFiles(directoryPath: string): Promise<string[]> {
       entries.map(async (entry) => {
         const entryPath = path.join(directoryPath, entry.name);
 
-        assertInsideRoot(DEFAULT_PROJECT_REFERENCES_DIR, entryPath);
+        assertInsideRoot(REFERENCES_DIR, entryPath);
 
         if (entry.isDirectory()) {
           return listReferenceFiles(entryPath);
@@ -82,9 +81,9 @@ async function listReferenceFiles(directoryPath: string): Promise<string[]> {
 }
 
 function toProjectRelativePath(filePath: string) {
-  assertInsideRoot(DEFAULT_PROJECT_DIR, filePath);
+  assertInsideRoot(process.cwd(), filePath);
 
-  return path.relative(DEFAULT_PROJECT_DIR, filePath).split(path.sep).join("/");
+  return path.relative(process.cwd(), filePath).split(path.sep).join("/");
 }
 
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {

@@ -30,9 +30,9 @@ export async function saveCharacter(input: CharacterInput, characterId?: string)
     id,
     name: input.name.trim(),
     age: optionalText(input.age),
-    description: input.description.trim(),
-    appearance: input.appearance.trim(),
-    personality: input.personality.trim(),
+    description: optionalText(input.description),
+    appearance: optionalText(input.appearance),
+    personality: optionalText(input.personality),
     clothes: optionalText(input.clothes),
     referenceImages: parseReferenceImages(input.referenceImagesText),
     voiceId: optionalText(input.voiceId),
@@ -130,4 +130,3 @@ function optionalText(value: string | undefined) {
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {
   return error instanceof Error && "code" in error;
 }
-

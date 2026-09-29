@@ -2,9 +2,9 @@ export type Character = {
   id: string;
   name: string;
   age?: string;
-  description: string;
-  appearance: string;
-  personality: string;
+  description?: string;
+  appearance?: string;
+  personality?: string;
   clothes?: string;
   referenceImages: string[];
   voiceId?: string;
@@ -12,11 +12,12 @@ export type Character = {
   updatedAt: string;
 };
 
-export type CharacterInput = Pick<
-  Character,
-  "name" | "description" | "appearance" | "personality"
-> &
-  Partial<Pick<Character, "age" | "clothes" | "voiceId">> & {
+export type CharacterInput = Pick<Character, "name"> &
+  Partial<
+    Pick<
+      Character,
+      "age" | "description" | "appearance" | "personality" | "clothes" | "voiceId"
+    >
+  > & {
     referenceImagesText: string;
   };
-

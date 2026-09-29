@@ -70,18 +70,6 @@ function validateCharacterInput(input: CharacterInput) {
     errors.name = "Вкажи імʼя персонажа.";
   }
 
-  if (!input.description) {
-    errors.description = "Додай короткий опис персонажа.";
-  }
-
-  if (!input.appearance) {
-    errors.appearance = "Опиши зовнішність персонажа.";
-  }
-
-  if (!input.personality) {
-    errors.personality = "Опиши характер персонажа.";
-  }
-
   if (validateReferenceImages(input.referenceImagesText).length > 0) {
     errors.referenceImagesText =
       "Використовуй тільки локальні відносні шляхи без '..'.";

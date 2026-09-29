@@ -144,6 +144,7 @@ ffmpeg -version
 Потрібні:
 
 - fal.ai API key для першої video generation інтеграції.
+- ElevenLabs API key для автоматичної генерації scene sound effects / ambience.
 
 ### Optional later
 
@@ -153,8 +154,7 @@ ffmpeg -version
 - генерацію ідей, hooks і сюжетів через OpenAI;
 - Google API key для Veo;
 - ключі Kling, WAN, Seedance, Runway або інших video providers;
-- voice generation provider;
-- music або sound effects provider.
+- voice generation provider для діалогів і озвучки.
 
 ## Environment variables
 
@@ -173,12 +173,30 @@ FAL_VIDEO_MODEL=fal-ai/fast-svd/text-to-video
 FAL_ESTIMATED_COST_PER_SECOND_USD=
 GOOGLE_API_KEY=
 VIDEO_PROVIDER=fal
+AUDIO_PROVIDER=elevenlabs
+ELEVENLABS_API_KEY=
+ELEVENLABS_SOUND_EFFECTS_MODEL=eleven_text_to_sound_v2
+ELEVENLABS_OUTPUT_FORMAT=mp3_44100_128
+ELEVENLABS_PROMPT_INFLUENCE=0.45
+ELEVENLABS_MUSIC_MODEL=music_v2_5
+ELEVENLABS_MUSIC_OUTPUT_FORMAT=mp3_44100_128
 ```
 
 `GOOGLE_API_KEY` можна залишити порожнім у V1.
 
 `FAL_ESTIMATED_COST_PER_SECOND_USD` можна залишити порожнім. Якщо хочеш бачити
 локальну оцінку витрат, вкажи приблизну ціну однієї секунди генерації у USD.
+
+`ELEVENLABS_API_KEY` потрібен для автоматичної генерації звуків. Без нього можна
+зберігати audio plan, але не можна згенерувати MP3 для сцени з ручним блоком
+`Звук:` і конкретними SFX.
+
+`ELEVENLABS_OUTPUT_FORMAT` у V1 варто залишити `mp3_44100_128`, бо далі FFmpeg
+легко зміксує MP3 у фінальний MP4 з AAC audio.
+
+Щоб створювати фонову музику, відкрий налаштування API key в ElevenLabs і надай
+йому `Music Generation: Access`. Для SFX потрібен окремий дозвіл `Sound Effects:
+Access`. Обидва дозволи використовують один `ELEVENLABS_API_KEY`.
 
 Правила:
 

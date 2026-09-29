@@ -1,9 +1,9 @@
-.PHONY: help install dev build start lint check clean
+.PHONY: help install run build start lint check clean
 
 help:
 	@echo "Available commands:"
 	@echo "  make install  - install npm dependencies"
-	@echo "  make dev      - run local Next.js dev server"
+	@echo "  make run      - run local Next.js dev server"
 	@echo "  make build    - create production build"
 	@echo "  make start    - run production server after build"
 	@echo "  make lint     - run ESLint"
@@ -13,7 +13,7 @@ help:
 install:
 	npm install
 
-dev:
+run:
 	npm run dev
 
 build:

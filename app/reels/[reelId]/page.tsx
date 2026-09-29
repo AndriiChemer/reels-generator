@@ -107,6 +107,7 @@ export default async function ReelEditorPage({
       </div>
 
       <SceneEditor
+        backgroundAudio={reel.backgroundAudio}
         characters={characters}
         finalOutputPath={reel.finalOutputPath}
         finalRenderError={reel.finalRenderError}

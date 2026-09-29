@@ -7,6 +7,7 @@ export type ReelDraft = {
   finalOutputPath?: string;
   finalRenderedAt?: string;
   finalRenderError?: string;
+  backgroundAudio?: ReelBackgroundAudioOutput;
   createdAt: string;
   updatedAt: string;
 };
@@ -21,18 +22,60 @@ export type ReelSceneStatus =
   | "completed"
   | "failed";
 
+export type SceneAudioPlanSource = "explicit" | "auto";
+
+export type SceneAudioSpeechPolicy = "no_speech" | "dialogue_expected";
+
+export type SceneAudioCue = {
+  description: string;
+  startSeconds?: number;
+  endSeconds?: number;
+};
+
+export type SceneAudioPlan = {
+  source: SceneAudioPlanSource;
+  prompt: string;
+  durationSeconds: number;
+  speechPolicy: SceneAudioSpeechPolicy;
+  ambiencePrompt?: string;
+  musicPrompt?: string;
+  voicePrompt?: string;
+  sfx: SceneAudioCue[];
+  rawText?: string;
+};
+
+export type SceneAudioOutput = {
+  provider: "elevenlabs";
+  model: string;
+  outputPath: string;
+  durationSeconds: number;
+  characterCost?: number;
+  generatedAt: string;
+};
+
+export type ReelBackgroundAudioOutput = {
+  provider: "elevenlabs";
+  model: string;
+  outputPath: string;
+  durationSeconds: number;
+  characterCost?: number;
+  generatedAt: string;
+};
+
 export type ReelScene = {
   id: string;
   order: number;
   rawText: string;
   durationSeconds: number;
   videoPrompt: string;
+  audioPlan: SceneAudioPlan;
   characterNames: string[];
   characterIds: string[];
   referenceNames: string[];
   referencePaths: string[];
   status: ReelSceneStatus;
   outputPath?: string;
+  audioOutput?: SceneAudioOutput;
 };
 
 export type ReelScenesDocument = {

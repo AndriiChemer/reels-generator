@@ -68,9 +68,11 @@ export default async function CharactersPage() {
                 </form>
               </div>
 
-              <p className="mt-3 text-sm leading-6 text-[var(--muted)]">
-                {character.description}
-              </p>
+              {character.description ? (
+                <p className="mt-3 text-sm leading-6 text-[var(--muted)]">
+                  {character.description}
+                </p>
+              ) : null}
 
               <details className="mt-4">
                 <summary className="cursor-pointer text-sm font-semibold text-[var(--accent-strong)]">

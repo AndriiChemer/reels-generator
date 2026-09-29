@@ -31,6 +31,13 @@ reels generator/
             [sceneId]/
               generate/
                 route.ts
+              audio/
+                generate/
+                  route.ts
+          audio/
+            music/
+              generate/
+                route.ts
           render/
             route.ts
       generations/
@@ -53,6 +60,10 @@ reels generator/
         ideas.ts
         script.ts
         scenes.ts
+      audio-providers/
+        index.ts
+        elevenlabs.ts
+        types.ts
       video-providers/
         index.ts
         fal.ts
@@ -69,6 +80,7 @@ reels generator/
       character.ts
       reel.ts
       generation.ts
+      audio-generation.ts
 
   data/
     projects/
@@ -77,20 +89,34 @@ reels generator/
         characters/
           character-john.json
           character-sofia.json
-        references/
-          characters/
-            character-john/
-              reference-01.png
-          app/
-            logo.png
-            screen-home.png
         reels/
           reel-001/
             reel.json
             scenes.json
             generations.json
 
+  references/
+    characters/
+      mia/
+        portrait-01.png
+        portrait-02.jpg
+      ethan/
+        portrait-01.png
+    app/
+      logo/
+        logo-primary.png
+      screens/
+        screen-home.png
+        screen-paywall.png
+
   outputs/
+    audio/
+      reels/
+        reel-001/
+          background.mp3
+      scenes/
+        reel-001/
+          scene-01.mp3
     scenes/
       reel-001/
         scene-01.mp4
@@ -141,6 +167,7 @@ Next.js App Router. Тут живуть сторінки, route handlers і glob
 - OpenAI client;
 - prompts;
 - video provider abstraction;
+- audio provider abstraction;
 - fal.ai provider implementation.
 
 Client components не мають імпортувати файли, які читають API keys.
@@ -180,15 +207,27 @@ Client components не мають імпортувати файли, які чи
 
 Один JSON-файл на персонажа. Так простіше редагувати й не переписувати великий спільний файл.
 
-### `data/projects/default/references/`
+### `references/`
 
-Локальні reference assets, які можна передавати в сцени.
+Локальні візуальні референси. Це вхідні файли, які ти додаєш вручну, тому
+папка лежить у корені проєкту, поруч із `data/` та `outputs/`. Реальні медіафайли
+ігноруються Git; у репозиторії залишаються тільки `.gitkeep` для структури папок.
 
-Рекомендована структура:
+Підготовлена структура:
 
-- `references/characters/character-id/` для фото або зображень персонажа;
-- `references/app/` для logo, screenshots і branding assets застосунку;
-- `references/reels/reel-id/`, якщо пізніше потрібні assets тільки для конкретного Reel.
+- `references/characters/mia/` для кількох фото або зображень Mia;
+- `references/characters/ethan/` для кількох фото або зображень Ethan;
+- `references/app/logo/` для кількох варіантів логотипу;
+- `references/app/screens/` для знімків екрана застосунку.
+
+У кожну папку можна додати скільки завгодно `.png`, `.jpg`, `.jpeg` або `.webp`.
+Для посилання в тексті сцени використовується ім'я файлу без розширення: файл
+`references/app/screens/screen-home.png` доступний як `#screen-home`, а
+`references/app/logo/logo-primary.png` — як `#logo-primary`.
+
+Персонажа все одно потрібно створити на сторінці `Персонажі` з іменем `Mia` або
+`Ethan`, після чого у сцені використовувати `@Mia` або `@Ethan`. Шляхи до кількох
+фото можна додати в поле «Референс-зображення» цього персонажа.
 
 У тексті сцен такі assets можна згадувати через короткі aliases:
 
@@ -218,10 +257,30 @@ Client components не мають імпортувати файли, які чи
       "rawText": "@Sofia відкриває застосунок. На екрані #screen-home.",
       "durationSeconds": 4,
       "videoPrompt": "@Sofia відкриває застосунок. На екрані #screen-home.",
+      "audioPlan": {
+        "source": "explicit",
+        "prompt": "Створи цілісний audio bed на 4 секунд для вертикального Reel...",
+        "durationSeconds": 4,
+        "speechPolicy": "no_speech",
+        "sfx": [
+          {
+            "description": "короткий звук свайпу",
+            "startSeconds": 1,
+            "endSeconds": 1.5
+          }
+        ]
+      },
+      "audioOutput": {
+        "provider": "elevenlabs",
+        "model": "eleven_text_to_sound_v2",
+        "outputPath": "audio/scenes/reel-001/scene-01.mp3",
+        "durationSeconds": 4,
+        "generatedAt": "2026-09-21T18:00:00.000Z"
+      },
       "characterNames": ["Sofia"],
       "characterIds": ["character-sofia"],
       "referenceNames": ["screen-home"],
-      "referencePaths": ["references/app/screen-home.png"],
+      "referencePaths": ["references/app/screens/screen-home.png"],
       "status": "draft"
     }
   ]
@@ -233,6 +292,16 @@ Client components не мають імпортувати файли, які чи
 ### `outputs/scenes/`
 
 Локальні MP4 для окремих сцен.
+
+### `outputs/audio/scenes/`
+
+Локальні SFX-треки тільки для сцен із ручним блоком `Звук:` і конкретними
+звуковими подіями.
+
+### `outputs/audio/reels/`
+
+Одна локальна інструментальна фонова доріжка для кожного Reel. Під час render
+FFmpeg зміксує її зі SFX сцен у фінальний AAC audio stream.
 
 ### `outputs/reels/`
 

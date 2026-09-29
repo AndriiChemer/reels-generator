@@ -16,7 +16,7 @@
 - `lib/files/paths.ts`
 - `lib/files/json.ts`
 - `data/projects/default/characters/`
-- `data/projects/default/references/`
+- `references/characters/`
 
 ## Character fields
 
@@ -43,4 +43,3 @@
 - Можна відредагувати персонажа.
 - Персонажі зберігаються у `data/projects/default/characters/`.
 - UI українською.
-

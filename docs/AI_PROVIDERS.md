@@ -2,7 +2,9 @@
 
 ## Загальний підхід
 
-У V1 підтримується тільки один video provider. Архітектура залишає маленький інтерфейс, щоб пізніше додати другого provider без переписування UI та storage flow.
+У V1 video і audio розділені. Video provider генерує короткі кліпи сцен, а audio provider генерує sound bed / SFX для цих сцен.
+
+Архітектура залишає маленькі інтерфейси, щоб пізніше додати другого provider без переписування UI та storage flow.
 
 Не треба одразу інтегрувати fal.ai, Google Veo, Kling, WAN, Seedance і Runway одночасно. Це збільшить кількість edge cases до того, як буде робочий MVP.
 
@@ -139,7 +141,7 @@ Google Veo може бути альтернативним provider для video 
 
 ## Recommended V1 provider
 
-Рекомендація: **fal.ai**.
+Рекомендація для відео: **fal.ai**.
 
 Чому:
 
@@ -149,6 +151,8 @@ Google Veo може бути альтернативним provider для video 
 - менше ризику застрягнути в provider-specific setup до того, як працює весь продукт.
 
 ## Minimal provider interface
+
+### Video
 
 ```ts
 export type VideoGenerationInput = {
@@ -175,6 +179,85 @@ export interface VideoProvider {
 }
 ```
 
+### Audio
+
+Перший audio provider: **ElevenLabs Sound Effects**.
+
+ElevenLabs використовується для вибіркової генерації scene SFX:
+
+- foley/SFX для явних звукових подій;
+- короткої натуральної атмосфери, якщо вона зазначена разом із SFX;
+- без voiceover і фонової музики в першій audio-фазі.
+
+SFX не генерується для кожної сцени автоматично. Користувач додає ручний блок
+`Звук:` з конкретними подіями, а застосунок створює один короткий трек для цієї
+сцени.
+
+### Фонова музика всього Reel
+
+ElevenLabs Music API створює одну інструментальну доріжку для всього Reel.
+Prompt використовує стиль і сюжет Reel, а також рядки з `Звук:`, що описують
+музику. Для API key потрібно надати окремий дозвіл `Music Generation: Access`.
+
+Застосунок зберігає MP3 у `outputs/audio/reels/<reelId>/background.mp3` і
+накладає його через FFmpeg на всі SFX. Музика навмисно генерується тільки після
+явного натискання кнопки в редакторі, щоб не створювати несподівані витрати.
+
+Voice/dialogue краще додавати окремим TTS task, бо там інший timing і voice IDs.
+
+Provider implementation має жити тут:
+
+```text
+lib/ai/audio-providers/elevenlabs.ts
+```
+
+Спільні типи:
+
+```text
+lib/ai/audio-providers/types.ts
+lib/types/audio-generation.ts
+```
+
+Мінімальний interface:
+
+```ts
+export type AudioGenerationInput = {
+  prompt: string;
+  durationSeconds: number;
+  loop?: boolean;
+  model?: string;
+  outputFormat?: string;
+  promptInfluence?: number;
+};
+
+export type MusicGenerationInput = {
+  prompt: string;
+  durationSeconds: number;
+  model?: string;
+  outputFormat?: string;
+};
+
+export type AudioGenerationResult = {
+  provider: "elevenlabs";
+  model: string;
+  audioBytes: ArrayBuffer;
+  contentType: string;
+  extension: "mp3" | "wav" | "pcm" | "opus" | "ulaw" | "alaw";
+  outputFormat: string;
+  durationSeconds: number;
+  characterCost?: number;
+};
+
+export interface AudioProvider {
+  generateSoundEffect(input: AudioGenerationInput): Promise<AudioGenerationResult>;
+  generateMusic(input: MusicGenerationInput): Promise<AudioGenerationResult>;
+}
+```
+
+ElevenLabs Sound Effects endpoint повертає аудіо напряму як binary response.
+Застосунок записує його в `outputs/audio/scenes/<reelId>/<sceneId>.mp3` і
+зберігає metadata у `scenes.json`.
+
 ## Environment variables
 
 ```bash
@@ -184,9 +267,24 @@ FAL_VIDEO_MODEL=fal-ai/fast-svd/text-to-video
 FAL_ESTIMATED_COST_PER_SECOND_USD=
 GOOGLE_API_KEY=
 VIDEO_PROVIDER=fal
+AUDIO_PROVIDER=elevenlabs
+ELEVENLABS_API_KEY=
+ELEVENLABS_SOUND_EFFECTS_MODEL=eleven_text_to_sound_v2
+ELEVENLABS_OUTPUT_FORMAT=mp3_44100_128
+ELEVENLABS_PROMPT_INFLUENCE=0.45
+ELEVENLABS_MUSIC_MODEL=music_v2_5
+ELEVENLABS_MUSIC_OUTPUT_FORMAT=mp3_44100_128
 ```
 
 У V1 `VIDEO_PROVIDER` може бути зафіксований як `fal`, але env-змінна корисна для майбутнього перемикання.
+
+У V1 `AUDIO_PROVIDER` може бути зафіксований як `elevenlabs`. Env-змінна потрібна, щоб пізніше замінити sound provider без зміни scene parser і FFmpeg layer.
+
+`ELEVENLABS_PROMPT_INFLUENCE` має бути від `0` до `1`. Більше значення точніше тримається prompt, менше дає більше варіативності.
+
+`ELEVENLABS_MUSIC_MODEL` за замовчуванням використовує `music_v2_5`. Music API
+приймає тривалість від 3 до 600 секунд; локальний MVP не розбиває довші Reel на
+кілька музичних генерацій.
 
 ## Cost tracking
 

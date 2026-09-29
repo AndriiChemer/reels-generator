@@ -23,57 +23,13 @@ export function CharacterForm({ character }: CharacterFormProps) {
 
   return (
     <form action={formAction} className="grid gap-4">
-      <div className="grid gap-4 sm:grid-cols-2">
-        <TextField
-          error={state.errors?.name}
-          label="Імʼя"
-          name="name"
-          placeholder="Наприклад: Sofia"
-          required
-          value={character?.name}
-        />
-        <TextField
-          error={state.errors?.age}
-          label="Вік"
-          name="age"
-          placeholder="Наприклад: 28"
-          value={character?.age}
-        />
-      </div>
-
-      <TextAreaField
-        error={state.errors?.description}
-        label="Короткий опис"
-        name="description"
-        placeholder="Роль персонажа у відео, що він або вона уособлює"
+      <TextField
+        error={state.errors?.name}
+        label="Імʼя"
+        name="name"
+        placeholder="Наприклад: Sofia"
         required
-        value={character?.description}
-      />
-
-      <TextAreaField
-        error={state.errors?.appearance}
-        label="Зовнішність"
-        name="appearance"
-        placeholder="Обличчя, зачіска, візуальні особливості"
-        required
-        value={character?.appearance}
-      />
-
-      <TextAreaField
-        error={state.errors?.personality}
-        label="Характер"
-        name="personality"
-        placeholder="Темперамент, манера говорити, емоційний стиль"
-        required
-        value={character?.personality}
-      />
-
-      <TextAreaField
-        error={state.errors?.clothes}
-        label="Одяг"
-        name="clothes"
-        placeholder="Типовий образ персонажа"
-        value={character?.clothes}
+        value={character?.name}
       />
 
       <TextAreaField
@@ -81,10 +37,14 @@ export function CharacterForm({ character }: CharacterFormProps) {
         label="Референс-зображення"
         name="referenceImagesText"
         placeholder={
-          "references/characters/sofia/reference-01.png\nreferences/characters/sofia/reference-02.png"
+          "references/characters/mia/portrait-01.png\nreferences/characters/mia/portrait-02.png"
         }
         value={character?.referenceImages.join("\n")}
       />
+      <p className="-mt-2 text-sm leading-6 text-[var(--muted)]">
+        Вкажи відносний шлях до кожного файлу, по одному в рядку. Папку або
+        абсолютний шлях додавати не потрібно.
+      </p>
 
       <TextField
         error={state.errors?.voiceId}

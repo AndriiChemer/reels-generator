@@ -6,7 +6,11 @@ import {
   assertInsideRoot,
 } from "@/lib/files/paths";
 import { readJsonFile, writeJsonFile } from "@/lib/files/json";
-import type { ReelDraft, ReelDraftInput } from "@/lib/types/reel";
+import type {
+  ReelBackgroundAudioOutput,
+  ReelDraft,
+  ReelDraftInput,
+} from "@/lib/types/reel";
 
 const REEL_FILE_NAME = "reel.json";
 
@@ -59,6 +63,27 @@ export async function updateReelFinalRender(
     finalRenderedAt: result.finalOutputPath ? now : reel.finalRenderedAt,
     finalRenderError: result.finalRenderError,
     updatedAt: now,
+  };
+
+  await writeJsonFile(getReelFilePath(reelId), nextReel);
+
+  return nextReel;
+}
+
+export async function updateReelBackgroundAudio(
+  reelId: string,
+  backgroundAudio: ReelBackgroundAudioOutput,
+) {
+  const reel = await readReelDraft(reelId);
+
+  if (!reel) {
+    throw new Error("Reel draft does not exist.");
+  }
+
+  const nextReel: ReelDraft = {
+    ...reel,
+    backgroundAudio,
+    updatedAt: new Date().toISOString(),
   };
 
   await writeJsonFile(getReelFilePath(reelId), nextReel);
