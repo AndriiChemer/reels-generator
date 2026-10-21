@@ -75,20 +75,29 @@ export async function updateGenerationFromResult(
   result: VideoGenerationResult,
   outputPath?: string,
 ) {
-  return upsertGeneration({
-    ...currentGeneration,
-    status: result.status,
-    estimatedCostUsd: resolveEstimatedCostUsd(
-      currentGeneration.durationSeconds,
-      result.estimatedCostUsd,
-      currentGeneration.estimatedCostUsd,
-    ),
+  const nextGeneration = withGenerationLog(
+    {
+      ...currentGeneration,
+      status: result.status,
+      estimatedCostUsd: resolveEstimatedCostUsd(
+        currentGeneration.durationSeconds,
+        result.estimatedCostUsd,
+        currentGeneration.estimatedCostUsd,
+      ),
     temporaryVideoUrl:
       result.temporaryVideoUrl ?? currentGeneration.temporaryVideoUrl,
-    outputPath: outputPath ?? currentGeneration.outputPath,
-    errorMessage: result.errorMessage,
-    updatedAt: new Date().toISOString(),
-  });
+      providerStatusUrl:
+        result.providerStatusUrl ?? currentGeneration.providerStatusUrl,
+      providerResponseUrl:
+        result.providerResponseUrl ?? currentGeneration.providerResponseUrl,
+      outputPath: outputPath ?? currentGeneration.outputPath,
+      errorMessage: result.errorMessage,
+      updatedAt: new Date().toISOString(),
+    },
+    getProviderProgressMessage(result.status, result.errorMessage),
+  );
+
+  return upsertGeneration(nextGeneration);
 }
 
 export function createGenerationFromResult({
@@ -102,7 +111,7 @@ export function createGenerationFromResult({
 }) {
   const now = new Date().toISOString();
 
-  return {
+  const generation = {
     id: result.generationId || createLocalGenerationId(now, scene.id),
     reelId,
     sceneId: scene.id,
@@ -115,10 +124,17 @@ export function createGenerationFromResult({
       result.estimatedCostUsd,
     ),
     temporaryVideoUrl: result.temporaryVideoUrl,
+    providerStatusUrl: result.providerStatusUrl,
+    providerResponseUrl: result.providerResponseUrl,
     errorMessage: result.errorMessage,
     createdAt: now,
     updatedAt: now,
   } satisfies GenerationMetadata;
+
+  return withGenerationLog(
+    generation,
+    getProviderProgressMessage(result.status, result.errorMessage),
+  );
 }
 
 export function createFailedGeneration({
@@ -132,7 +148,7 @@ export function createFailedGeneration({
 }) {
   const now = new Date().toISOString();
 
-  return {
+  const generation = {
     id: createLocalGenerationId(now, scene.id),
     reelId,
     sceneId: scene.id,
@@ -144,6 +160,35 @@ export function createFailedGeneration({
     createdAt: now,
     updatedAt: now,
   } satisfies GenerationMetadata;
+
+  return withGenerationLog(generation, `Помилка запуску: ${errorMessage}`);
+}
+
+export function withGenerationLog(
+  generation: GenerationMetadata,
+  message: string,
+) {
+  const latestEntry = generation.activityLog?.at(-1);
+
+  if (
+    latestEntry?.message === message &&
+    generation.progressMessage === message
+  ) {
+    return generation;
+  }
+
+  const now = new Date().toISOString();
+  const activityLog = [
+    ...(generation.activityLog ?? []),
+    { createdAt: now, message },
+  ].slice(-20);
+
+  return {
+    ...generation,
+    activityLog,
+    progressMessage: message,
+    updatedAt: now,
+  };
 }
 
 export function getGenerationsFilePath(reelId: string) {
@@ -162,6 +207,24 @@ function createLocalGenerationId(timestamp: string, sceneId: string) {
   const timestampPart = timestamp.replace(/\D/g, "").slice(0, 17);
 
   return `generation-${sceneId}-${timestampPart}`;
+}
+
+function getProviderProgressMessage(
+  status: GenerationMetadata["status"],
+  errorMessage?: string,
+): string {
+  switch (status) {
+    case "queued":
+      return "Запит прийнято. Очікуємо місце в черзі провайдера.";
+    case "processing":
+      return "Провайдер генерує відео.";
+    case "completed":
+      return "Провайдер завершив генерацію. Готуємо локальний MP4.";
+    case "failed":
+      return errorMessage
+        ? `Помилка провайдера: ${errorMessage}`
+        : "Генерація не вдалася.";
+  }
 }
 
 function resolveEstimatedCostUsd(

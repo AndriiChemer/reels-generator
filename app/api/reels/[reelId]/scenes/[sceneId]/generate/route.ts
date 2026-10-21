@@ -1,8 +1,10 @@
 import { getVideoProvider } from "@/lib/ai/video-providers";
+import { listCharacters } from "@/lib/characters";
 import {
   createFailedGeneration,
   createGenerationFromResult,
   upsertGeneration,
+  withGenerationLog,
 } from "@/lib/generations";
 import { downloadSceneVideo } from "@/lib/files/media";
 import { findReelScene, readReelScenes, updateReelSceneStatus } from "@/lib/scenes";
@@ -28,12 +30,36 @@ export async function POST(
   }
 
   try {
+    const characters = await listCharacters();
+    const characterReferences = scene.characterIds.flatMap((characterId) => {
+      const character = characters.find(({ id }) => id === characterId);
+      const imagePaths = character?.referenceImages.filter(Boolean) || [];
+
+      return imagePaths.length > 0
+        ? [{ label: `персонаж ${character?.name || characterId}`, imagePaths }]
+        : [];
+    });
+    const assetReferences = scene.referencePaths.map((referencePath, index) => ({
+      label: `референс #${scene.referenceNames[index] || referenceNameFromPath(referencePath)}`,
+      imagePaths: [referencePath],
+    }));
+    const referenceSets = [...characterReferences, ...assetReferences];
+    const startImagePath =
+      assetReferences[0]?.imagePaths[0] || characterReferences[0]?.imagePaths[0];
+
+    if (!startImagePath) {
+      throw new Error(
+        "Для генерації з максимальною схожістю додай @персонажа або #референс із картинкою.",
+      );
+    }
+
     const provider = getVideoProvider();
     const result = await provider.generateVideo({
       prompt: scene.videoPrompt || scene.rawText,
       durationSeconds: scene.durationSeconds,
       aspectRatio: "9:16",
-      assetReferencePaths: scene.referencePaths,
+      startImagePath,
+      referenceSets,
     });
     const generation = createGenerationFromResult({
       reelId,
@@ -49,10 +75,10 @@ export async function POST(
           })
         : undefined;
     const completedGeneration: GenerationMetadata = outputPath
-      ? {
-          ...generation,
-          outputPath,
-        }
+      ? withGenerationLog(
+          { ...generation, outputPath },
+          "MP4 збережено локально. Сцена готова.",
+        )
       : generation;
 
     await Promise.all([
@@ -80,6 +106,12 @@ export async function POST(
 
     return Response.json({ generation, error: generation.errorMessage }, { status: 502 });
   }
+}
+
+function referenceNameFromPath(referencePath: string) {
+  const filename = referencePath.split("/").at(-1) || "reference";
+
+  return filename.replace(/\.[^.]+$/, "");
 }
 
 function jsonError(message: string, status: number) {

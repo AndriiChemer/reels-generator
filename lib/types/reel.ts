@@ -53,6 +53,30 @@ export type SceneAudioOutput = {
   generatedAt: string;
 };
 
+export type SceneVoiceoverOutput = {
+  provider: "elevenlabs";
+  model: string;
+  outputPath: string;
+  text: string;
+  speakerCharacterId: string;
+  speakerName: string;
+  speakerVoiceId: string;
+  startSeconds: number;
+  endSeconds: number;
+  emotion: VoiceoverEmotion;
+  speechRate: number;
+  speedAppliedNatively?: boolean;
+  characterCost?: number;
+  generatedAt: string;
+};
+
+export type VoiceoverEmotion =
+  | "neutral"
+  | "sad"
+  | "warm"
+  | "calm"
+  | "energetic";
+
 export type ReelBackgroundAudioOutput = {
   provider: "elevenlabs";
   model: string;
@@ -76,6 +100,10 @@ export type ReelScene = {
   status: ReelSceneStatus;
   outputPath?: string;
   audioOutput?: SceneAudioOutput;
+  voiceoverOutput?: SceneVoiceoverOutput;
+  previewOutputPath?: string;
+  previewRenderedAt?: string;
+  previewRenderError?: string;
 };
 
 export type ReelScenesDocument = {

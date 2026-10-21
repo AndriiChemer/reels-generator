@@ -20,6 +20,7 @@ export async function GET(
 
     return new Response(mediaFile, {
       headers: {
+        "Cache-Control": "no-store, max-age=0",
         "Content-Length": String(mediaFile.byteLength),
         "Content-Type": readContentType(filePath),
       },

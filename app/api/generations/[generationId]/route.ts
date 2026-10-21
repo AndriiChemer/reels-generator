@@ -3,6 +3,7 @@ import {
   findGeneration,
   updateGenerationFromResult,
   upsertGeneration,
+  withGenerationLog,
 } from "@/lib/generations";
 import { downloadSceneVideo } from "@/lib/files/media";
 import { updateReelSceneStatus } from "@/lib/scenes";
@@ -26,19 +27,29 @@ export async function GET(
     return jsonError("Generation не знайдено.", 404);
   }
 
-  if (generation.status === "failed") {
+  if (generation.status === "failed" && !isRecoverableStatusFailure(generation)) {
     return Response.json({ generation });
   }
 
   if (generation.status === "completed") {
     const completedGeneration = await ensureLocalOutput(generation);
 
+    await updateReelSceneStatus(
+      completedGeneration.reelId,
+      completedGeneration.sceneId,
+      completedGeneration.status,
+      completedGeneration.outputPath,
+    );
+
     return Response.json({ generation: completedGeneration });
   }
 
   try {
     const provider = getVideoProvider(generation.provider, generation.model);
-    const result = await provider.getGenerationStatus(generation.id);
+    const result = await provider.getGenerationStatus(generation.id, {
+      responseUrl: generation.providerResponseUrl,
+      statusUrl: generation.providerStatusUrl,
+    });
     const updatedGeneration = await updateGenerationFromResult(generation, result);
     const completedGeneration =
       updatedGeneration.status === "completed"
@@ -54,12 +65,18 @@ export async function GET(
 
     return Response.json({ generation: completedGeneration });
   } catch (error) {
-    const failedGeneration = await upsertGeneration({
-      ...generation,
-      status: "failed",
-      errorMessage: readErrorMessage(error),
-      updatedAt: new Date().toISOString(),
-    });
+    const errorMessage = readErrorMessage(error);
+    const failedGeneration = await upsertGeneration(
+      withGenerationLog(
+        {
+          ...generation,
+          status: "failed",
+          errorMessage,
+          updatedAt: new Date().toISOString(),
+        },
+        `Помилка перевірки статусу: ${errorMessage}`,
+      ),
+    );
 
     await updateReelSceneStatus(
       failedGeneration.reelId,
@@ -80,34 +97,65 @@ async function ensureLocalOutput(generation: GenerationMetadata) {
   }
 
   if (!generation.temporaryVideoUrl) {
-    return upsertGeneration({
-      ...generation,
-      status: "failed",
-      errorMessage: "Provider завершив generation, але не повернув video URL.",
-      updatedAt: new Date().toISOString(),
-    });
+    return upsertGeneration(
+      withGenerationLog(
+        {
+          ...generation,
+          status: "failed",
+          errorMessage: "Provider завершив generation, але не повернув video URL.",
+          updatedAt: new Date().toISOString(),
+        },
+        "Помилка: провайдер не повернув посилання на MP4.",
+      ),
+    );
   }
 
-  const outputPath = await downloadSceneVideo({
-    reelId: generation.reelId,
-    sceneId: generation.sceneId,
-    temporaryVideoUrl: generation.temporaryVideoUrl,
-  });
-  const completedGeneration = await upsertGeneration({
-    ...generation,
-    outputPath,
-    status: "completed",
-    updatedAt: new Date().toISOString(),
-  });
-
-  await updateReelSceneStatus(
-    completedGeneration.reelId,
-    completedGeneration.sceneId,
-    "completed",
-    completedGeneration.outputPath,
+  const downloadingGeneration = await upsertGeneration(
+    withGenerationLog(
+      { ...generation, status: "processing" },
+      "Завантажуємо готовий MP4 на локальний диск.",
+    ),
   );
 
-  return completedGeneration;
+  try {
+    const outputPath = await downloadSceneVideo({
+      reelId: generation.reelId,
+      sceneId: generation.sceneId,
+      temporaryVideoUrl: generation.temporaryVideoUrl,
+    });
+    const completedGeneration = await upsertGeneration(
+      withGenerationLog(
+        {
+          ...downloadingGeneration,
+          outputPath,
+          status: "completed",
+          updatedAt: new Date().toISOString(),
+        },
+        "MP4 збережено локально. Сцена готова.",
+      ),
+    );
+
+    await updateReelSceneStatus(
+      completedGeneration.reelId,
+      completedGeneration.sceneId,
+      "completed",
+      completedGeneration.outputPath,
+    );
+
+    return completedGeneration;
+  } catch (error) {
+    return upsertGeneration(
+      withGenerationLog(
+        {
+          ...downloadingGeneration,
+          status: "failed",
+          errorMessage: readErrorMessage(error),
+          updatedAt: new Date().toISOString(),
+        },
+        `Помилка завантаження MP4: ${readErrorMessage(error)}`,
+      ),
+    );
+  }
 }
 
 function jsonError(message: string, status: number) {
@@ -116,4 +164,8 @@ function jsonError(message: string, status: number) {
 
 function readErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Provider status error.";
+}
+
+function isRecoverableStatusFailure(generation: GenerationMetadata) {
+  return generation.errorMessage === "fal.ai request failed with 405.";
 }

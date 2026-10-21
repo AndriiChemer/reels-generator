@@ -5,7 +5,9 @@ import {
   OUTPUTS_DIR,
   OUTPUT_AUDIO_REELS_DIR,
   OUTPUT_AUDIO_SCENES_DIR,
+  OUTPUT_AUDIO_VOICEOVERS_DIR,
   OUTPUT_REELS_DIR,
+  OUTPUT_SCENE_PREVIEWS_DIR,
   OUTPUT_SCENES_DIR,
   assertInsideRoot,
 } from "@/lib/files/paths";
@@ -36,6 +38,20 @@ export function getFinalReelOutputPath(reelId: string) {
   const filePath = path.join(OUTPUT_REELS_DIR, safeReelId, "final.mp4");
 
   assertInsideRoot(OUTPUT_REELS_DIR, filePath);
+
+  return filePath;
+}
+
+export function getScenePreviewOutputPath(reelId: string, sceneId: string) {
+  const safeReelId = sanitizeReelId(reelId);
+  const safeSceneId = sanitizeMediaSegment(sceneId);
+  const filePath = path.join(
+    OUTPUT_SCENE_PREVIEWS_DIR,
+    safeReelId,
+    `${safeSceneId}.mp4`,
+  );
+
+  assertInsideRoot(OUTPUT_SCENE_PREVIEWS_DIR, filePath);
 
   return filePath;
 }
@@ -72,6 +88,25 @@ export function getReelBackgroundAudioOutputPath(
   );
 
   assertInsideRoot(OUTPUT_AUDIO_REELS_DIR, filePath);
+
+  return filePath;
+}
+
+export function getSceneVoiceoverOutputPath(
+  reelId: string,
+  sceneId: string,
+  extension: AudioGenerationResult["extension"],
+) {
+  const safeReelId = sanitizeReelId(reelId);
+  const safeSceneId = sanitizeMediaSegment(sceneId);
+  const safeExtension = normalizeAudioExtension(extension);
+  const filePath = path.join(
+    OUTPUT_AUDIO_VOICEOVERS_DIR,
+    safeReelId,
+    `${safeSceneId}.${safeExtension}`,
+  );
+
+  assertInsideRoot(OUTPUT_AUDIO_VOICEOVERS_DIR, filePath);
 
   return filePath;
 }
@@ -170,6 +205,26 @@ export async function saveReelBackgroundAudio({
   result: AudioGenerationResult;
 }) {
   const outputPath = getReelBackgroundAudioOutputPath(reelId, result.extension);
+
+  await saveAudioBuffer(outputPath, result.audioBytes);
+
+  return toOutputRelativePath(outputPath);
+}
+
+export async function saveSceneVoiceover({
+  reelId,
+  sceneId,
+  result,
+}: {
+  reelId: string;
+  sceneId: string;
+  result: AudioGenerationResult;
+}) {
+  const outputPath = getSceneVoiceoverOutputPath(
+    reelId,
+    sceneId,
+    result.extension,
+  );
 
   await saveAudioBuffer(outputPath, result.audioBytes);
 

@@ -18,6 +18,19 @@ export type MusicGenerationInput = {
   outputFormat?: string;
 };
 
+export type SpeechGenerationInput = {
+  text: string;
+  voiceId: string;
+  model?: string;
+  outputFormat?: string;
+  voiceSettings?: {
+    similarityBoost: number;
+    stability: number;
+    style: number;
+    speed: number;
+  };
+};
+
 export type AudioGenerationResult = {
   provider: AudioProviderName;
   model: string;

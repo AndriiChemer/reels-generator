@@ -12,6 +12,7 @@ import type {
   ReelScene,
   ReelScenesDocument,
   SceneAudioOutput,
+  SceneVoiceoverOutput,
 } from "@/lib/types/reel";
 
 const SCENES_FILE_NAME = "scenes.json";
@@ -164,6 +165,113 @@ export async function updateReelSceneAudio(
   await writeJsonFile(getReelScenesFilePath(reelId), nextDocument);
 
   return nextScene;
+}
+
+export async function updateReelSceneVoiceover(
+  reelId: string,
+  sceneId: string,
+  voiceoverOutput: SceneVoiceoverOutput,
+) {
+  const scenesDocument = await readReelScenes(reelId);
+
+  if (!scenesDocument) {
+    return null;
+  }
+
+  const scene = findReelScene(scenesDocument, sceneId);
+
+  if (!scene) {
+    return null;
+  }
+
+  const nextScene: ReelScene = {
+    ...scene,
+    voiceoverOutput,
+  };
+  const nextDocument: ReelScenesDocument = {
+    ...scenesDocument,
+    scenes: scenesDocument.scenes.map((currentScene) =>
+      currentScene.id === sceneId ? nextScene : currentScene,
+    ),
+    updatedAt: new Date().toISOString(),
+  };
+
+  await writeJsonFile(getReelScenesFilePath(reelId), nextDocument);
+
+  return nextScene;
+}
+
+export async function updateReelScenePreview(
+  reelId: string,
+  sceneId: string,
+  preview: { outputPath?: string; error?: string },
+) {
+  const scenesDocument = await readReelScenes(reelId);
+
+  if (!scenesDocument) {
+    return null;
+  }
+
+  const scene = findReelScene(scenesDocument, sceneId);
+
+  if (!scene) {
+    return null;
+  }
+
+  const nextScene: ReelScene = {
+    ...scene,
+    previewOutputPath: preview.outputPath ?? scene.previewOutputPath,
+    previewRenderedAt: preview.outputPath ? new Date().toISOString() : scene.previewRenderedAt,
+    previewRenderError: preview.error,
+  };
+  const nextDocument: ReelScenesDocument = {
+    ...scenesDocument,
+    scenes: scenesDocument.scenes.map((currentScene) =>
+      currentScene.id === sceneId ? nextScene : currentScene,
+    ),
+    updatedAt: new Date().toISOString(),
+  };
+
+  await writeJsonFile(getReelScenesFilePath(reelId), nextDocument);
+
+  return nextScene;
+}
+
+export type SceneVoiceoverCue = {
+  text: string;
+  startSeconds: number;
+  endSeconds: number;
+};
+
+export function getSceneVoiceoverCue(
+  scene: ReelScene,
+): SceneVoiceoverCue | null {
+  const sourceText = scene.audioPlan.rawText || scene.audioPlan.voicePrompt || "";
+  const match = sourceText.match(
+    /(?:^|\n)\s*[-*•]?\s*(?:voiceover|narrator|голос(?:\s+за\s+кадром)?|озвучення)\s*(?:(\d+(?:[.,]\d+)?)\s*[-–—]\s*(\d+(?:[.,]\d+)?))?\s*:\s*[“"']?(.+?)[”"']?\s*$/imu,
+  );
+
+  if (!match) {
+    return null;
+  }
+
+  const text = match[3]?.trim();
+
+  if (!text) {
+    return null;
+  }
+
+  const startSeconds = clampCueTime(
+    parseCueTime(match[1]) ?? 0,
+    scene.durationSeconds,
+  );
+  const requestedEndSeconds = parseCueTime(match[2]) ?? scene.durationSeconds;
+  const endSeconds = Math.max(
+    startSeconds,
+    clampCueTime(requestedEndSeconds, scene.durationSeconds),
+  );
+
+  return { text, startSeconds, endSeconds };
 }
 
 export function getReelScenesFilePath(reelId: string) {
@@ -329,6 +437,20 @@ function parseAudioCue(line: string) {
     startSeconds: Number.parseFloat(timedCueMatch[1].replace(",", ".")),
     endSeconds: Number.parseFloat(timedCueMatch[2].replace(",", ".")),
   };
+}
+
+function parseCueTime(value: string | undefined) {
+  if (!value) {
+    return undefined;
+  }
+
+  const parsed = Number.parseFloat(value.replace(",", "."));
+
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function clampCueTime(value: number, sceneDurationSeconds: number) {
+  return Math.min(Math.max(value, 0), sceneDurationSeconds);
 }
 
 function buildAutomaticAudioPrompt(

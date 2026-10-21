@@ -50,7 +50,7 @@ export function CharacterForm({ character }: CharacterFormProps) {
         error={state.errors?.voiceId}
         label="ID голосу"
         name="voiceId"
-        placeholder="Опційно для майбутньої озвучки"
+        placeholder="ElevenLabs Voice ID — потрібен лише для Voiceover"
         value={character?.voiceId}
       />
 

@@ -257,7 +257,10 @@ function BackgroundMusicGenerator({
         </div>
       ) : null}
 
-      <AudioPreview outputPath={backgroundAudio?.outputPath} />
+      <AudioPreview
+        outputPath={backgroundAudio?.outputPath}
+        version={backgroundAudio?.generatedAt}
+      />
 
       {errorMessage ? (
         <p aria-live="polite" className="mt-3 text-sm font-medium text-red-700">
@@ -280,6 +283,7 @@ function FinalReelRenderer({
   scenes: ReelScene[];
 }) {
   const [outputPath, setOutputPath] = useState(finalOutputPath);
+  const [outputVersion, setOutputVersion] = useState<string | undefined>();
   const [errorMessage, setErrorMessage] = useState(finalRenderError || "");
   const [isRendering, setIsRendering] = useState(false);
   const completedScenesCount = scenes.filter(
@@ -309,6 +313,7 @@ function FinalReelRenderer({
       }
 
       setOutputPath(payload.finalOutputPath);
+      setOutputVersion(String(Date.now()));
     } catch (error) {
       setErrorMessage(readClientError(error));
     } finally {
@@ -339,7 +344,7 @@ function FinalReelRenderer({
         </button>
       </div>
 
-      <VideoPreview outputPath={outputPath} />
+      <VideoPreview outputPath={outputPath} version={outputVersion} />
 
       {outputPath ? (
         <p className="mt-3 break-all text-xs leading-5 text-[var(--muted)]">
@@ -417,9 +422,24 @@ function SceneCard({
 
       <AudioPlanSummary audioPlan={scene.audioPlan} />
 
+      <GenerateSceneVoiceoverButton
+        audioPlan={scene.audioPlan}
+        initialVoiceoverOutput={scene.voiceoverOutput}
+        reelId={reelId}
+        sceneId={scene.id}
+      />
+
       <GenerateSceneSoundEffectButton
         audioPlan={scene.audioPlan}
         initialAudioOutput={scene.audioOutput}
+        reelId={reelId}
+        sceneId={scene.id}
+      />
+
+      <ScenePreviewRenderer
+        initialError={scene.previewRenderError}
+        initialOutputPath={scene.previewOutputPath}
+        initialVersion={scene.previewRenderedAt}
         reelId={reelId}
         sceneId={scene.id}
       />
@@ -432,6 +452,235 @@ function SceneCard({
         sceneStatus={scene.status}
       />
     </article>
+  );
+}
+
+function GenerateSceneVoiceoverButton({
+  audioPlan,
+  initialVoiceoverOutput,
+  reelId,
+  sceneId,
+}: {
+  audioPlan: ReelScene["audioPlan"];
+  initialVoiceoverOutput?: ReelScene["voiceoverOutput"];
+  reelId: string;
+  sceneId: string;
+}) {
+  const [voiceoverOutput, setVoiceoverOutput] = useState(initialVoiceoverOutput);
+  const [errorMessage, setErrorMessage] = useState("");
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [emotion, setEmotion] = useState(
+    initialVoiceoverOutput?.emotion ?? "neutral",
+  );
+  const [speechRate, setSpeechRate] = useState(
+    initialVoiceoverOutput?.speechRate ?? 1,
+  );
+  const canGenerate = Boolean(audioPlan.voicePrompt);
+
+  async function handleGenerate() {
+    setIsGenerating(true);
+    setErrorMessage("");
+
+    try {
+      const response = await fetch(
+        `/api/reels/${reelId}/scenes/${sceneId}/voiceover/generate`,
+        {
+          body: JSON.stringify({ emotion, speechRate }),
+          headers: { "Content-Type": "application/json" },
+          method: "POST",
+        },
+      );
+      const payload = (await response.json()) as VoiceoverGenerationApiResponse;
+
+      if (!response.ok || !payload.voiceoverOutput) {
+        setErrorMessage(payload.error || "Не вдалося озвучити репліку.");
+        return;
+      }
+
+      setVoiceoverOutput(payload.voiceoverOutput);
+    } catch (error) {
+      setErrorMessage(readClientError(error));
+    } finally {
+      setIsGenerating(false);
+    }
+  }
+
+  return (
+    <section className="mt-4 border-t border-[var(--border)] pt-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h4 className="text-sm font-semibold">Озвучення репліки</h4>
+          <p className="mt-1 text-xs leading-5 text-[var(--muted)]">
+            Використовує текст Voiceover та голос першого @персонажа сцени. Таймінг
+            зі сценарію буде застосовано під час фінальної збірки.
+          </p>
+        </div>
+        <button
+          className="w-full rounded-md border border-[var(--border)] bg-white px-4 py-2 text-sm font-semibold transition hover:border-[var(--accent)] hover:text-[var(--accent-strong)] disabled:cursor-not-allowed disabled:opacity-60 sm:w-fit"
+          disabled={isGenerating || !canGenerate}
+          onClick={handleGenerate}
+          type="button"
+        >
+          {isGenerating
+            ? "Озвучення..."
+            : voiceoverOutput
+              ? "Озвучити ще раз"
+              : "Озвучити Voiceover"}
+        </button>
+      </div>
+
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        <label className="grid gap-1 text-xs font-medium text-[var(--foreground)]">
+          Емоція голосу
+          <select
+            className="rounded-md border border-[var(--border)] bg-white px-3 py-2 text-sm font-normal"
+            onChange={(event) =>
+              setEmotion(
+                event.target.value as NonNullable<
+                  ReelScene["voiceoverOutput"]
+                >["emotion"],
+              )
+            }
+            value={emotion}
+          >
+            <option value="neutral">Нейтральна</option>
+            <option value="sad">Сумна / вразлива</option>
+            <option value="warm">Тепла</option>
+            <option value="calm">Спокійна</option>
+            <option value="energetic">Енергійна</option>
+          </select>
+        </label>
+        <label className="grid gap-1 text-xs font-medium text-[var(--foreground)]">
+          Темп мовлення (ElevenLabs)
+          <select
+            className="rounded-md border border-[var(--border)] bg-white px-3 py-2 text-sm font-normal"
+            onChange={(event) => setSpeechRate(Number(event.target.value))}
+            value={speechRate}
+          >
+            <option value={0.85}>Повільніше</option>
+            <option value={1}>Нормально</option>
+            <option value={1.15}>Швидше</option>
+          </select>
+        </label>
+      </div>
+
+      {!canGenerate ? (
+        <p className="mt-3 text-xs leading-5 text-[var(--muted)]">
+          Додай до блоку <span className="font-semibold">Звук:</span> рядок на
+          кшталт <span className="font-semibold">Voiceover 0.6–3.8: “Текст”</span>.
+        </p>
+      ) : null}
+
+      {voiceoverOutput ? (
+        <div className="mt-3 grid gap-1 text-xs leading-5 text-[var(--muted)]">
+          <p>
+            Голос: {voiceoverOutput.speakerName}; {voiceoverOutput.startSeconds}–
+            {voiceoverOutput.endSeconds} с
+          </p>
+          {voiceoverOutput.speakerVoiceId ? (
+            <p className="break-all">
+              ElevenLabs Voice ID: {voiceoverOutput.speakerVoiceId}
+            </p>
+          ) : null}
+          <p>
+            Емоція: {formatVoiceoverEmotion(voiceoverOutput.emotion)}; темп: {formatSpeechRate(voiceoverOutput.speechRate)}
+          </p>
+          <p className="italic">“{voiceoverOutput.text}”</p>
+          {typeof voiceoverOutput.characterCost === "number" ? (
+            <p>Облік ElevenLabs: {voiceoverOutput.characterCost}</p>
+          ) : null}
+          <p className="break-all">Файл: {voiceoverOutput.outputPath}</p>
+        </div>
+      ) : null}
+
+      <AudioPreview
+        outputPath={voiceoverOutput?.outputPath}
+        version={voiceoverOutput?.generatedAt}
+      />
+
+      {errorMessage ? (
+        <p aria-live="polite" className="mt-3 text-sm font-medium text-red-700">
+          {errorMessage}
+        </p>
+      ) : null}
+    </section>
+  );
+}
+
+function ScenePreviewRenderer({
+  initialError,
+  initialOutputPath,
+  initialVersion,
+  reelId,
+  sceneId,
+}: {
+  initialError?: string;
+  initialOutputPath?: string;
+  initialVersion?: string;
+  reelId: string;
+  sceneId: string;
+}) {
+  const [outputPath, setOutputPath] = useState(initialOutputPath);
+  const [outputVersion, setOutputVersion] = useState(initialVersion);
+  const [errorMessage, setErrorMessage] = useState(initialError || "");
+  const [isRendering, setIsRendering] = useState(false);
+
+  async function handleRender() {
+    setIsRendering(true);
+    setErrorMessage("");
+
+    try {
+      const response = await fetch(
+        `/api/reels/${reelId}/scenes/${sceneId}/preview/render`,
+        { method: "POST" },
+      );
+      const payload = (await response.json()) as ScenePreviewApiResponse;
+
+      if (!response.ok || !payload.previewOutputPath) {
+        setErrorMessage(payload.error || "Не вдалося зібрати preview сцени.");
+        return;
+      }
+
+      setOutputPath(payload.previewOutputPath);
+      setOutputVersion(String(Date.now()));
+    } catch (error) {
+      setErrorMessage(readClientError(error));
+    } finally {
+      setIsRendering(false);
+    }
+  }
+
+  return (
+    <section className="mt-4 border-t border-[var(--border)] pt-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h4 className="text-sm font-semibold">Preview сцени</h4>
+          <p className="mt-1 text-xs leading-5 text-[var(--muted)]">
+            Склеює MP4, SFX і Voiceover лише для цієї сцени. Фонова музика Reel сюди не додається.
+          </p>
+        </div>
+        <button
+          className="w-full rounded-md bg-[var(--foreground)] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[var(--accent-strong)] disabled:cursor-not-allowed disabled:opacity-60 sm:w-fit"
+          disabled={isRendering}
+          onClick={handleRender}
+          type="button"
+        >
+          {isRendering
+            ? "Склеювання..."
+            : outputPath
+              ? "Оновити preview сцени"
+              : "Зібрати preview сцени"}
+        </button>
+      </div>
+
+      <VideoPreview outputPath={outputPath} version={outputVersion} />
+
+      {errorMessage ? (
+        <p aria-live="polite" className="mt-3 text-sm font-medium text-red-700">
+          {errorMessage}
+        </p>
+      ) : null}
+    </section>
   );
 }
 
@@ -521,7 +770,10 @@ function GenerateSceneSoundEffectButton({
         </div>
       ) : null}
 
-      <AudioPreview outputPath={audioOutput?.outputPath} />
+      <AudioPreview
+        outputPath={audioOutput?.outputPath}
+        version={audioOutput?.generatedAt}
+      />
 
       {errorMessage ? (
         <p aria-live="polite" className="mt-3 text-sm font-medium text-red-700">
@@ -668,10 +920,13 @@ function GenerateSceneButton({
   const [generation, setGeneration] = useState(initialGeneration);
   const [isGenerating, setIsGenerating] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const [requestMessage, setRequestMessage] = useState("");
   const status = generation?.status ?? sceneStatus;
   const canPoll =
     Boolean(generation?.id) &&
-    (generation?.status === "queued" || generation?.status === "processing");
+    (generation?.status === "queued" ||
+      generation?.status === "processing" ||
+      isRecoverableStatusFailure(generation));
 
   useEffect(() => {
     if (!canPoll || !generation?.id) {
@@ -683,25 +938,34 @@ function GenerateSceneButton({
         const response = await fetch(`/api/generations/${generation.id}`);
         const payload = (await response.json()) as GenerationApiResponse;
 
+        if (payload.generation) {
+          setGeneration(payload.generation);
+          onGenerationChange(payload.generation);
+          setErrorMessage(payload.generation.errorMessage || "");
+        }
+
         if (!response.ok || !payload.generation) {
           setErrorMessage(payload.error || "Не вдалося оновити статус.");
           return;
         }
-
-        setGeneration(payload.generation);
-        onGenerationChange(payload.generation);
-        setErrorMessage(payload.generation.errorMessage || "");
       } catch (error) {
         setErrorMessage(readClientError(error));
       }
     }, 3000);
 
     return () => window.clearTimeout(timeoutId);
-  }, [canPoll, generation?.id, generation?.status, onGenerationChange]);
+  }, [
+    canPoll,
+    generation?.id,
+    generation?.status,
+    generation?.updatedAt,
+    onGenerationChange,
+  ]);
 
   async function handleGenerate() {
     setIsGenerating(true);
     setErrorMessage("");
+    setRequestMessage("Надсилаємо запит до відеопровайдера…");
 
     try {
       const response = await fetch(
@@ -712,16 +976,22 @@ function GenerateSceneButton({
       );
       const payload = (await response.json()) as GenerationApiResponse;
 
+      if (payload.generation) {
+        setGeneration(payload.generation);
+        onGenerationChange(payload.generation);
+        setErrorMessage(payload.generation.errorMessage || "");
+      }
+
       if (!response.ok || !payload.generation) {
         setErrorMessage(payload.error || "Не вдалося запустити генерацію.");
+        setRequestMessage("");
         return;
       }
 
-      setGeneration(payload.generation);
-      onGenerationChange(payload.generation);
-      setErrorMessage(payload.generation.errorMessage || "");
+      setRequestMessage("");
     } catch (error) {
       setErrorMessage(readClientError(error));
+      setRequestMessage("");
     } finally {
       setIsGenerating(false);
     }
@@ -751,6 +1021,11 @@ function GenerateSceneButton({
         </p>
       ) : null}
 
+      <GenerationProgress
+        generation={generation}
+        requestMessage={requestMessage}
+      />
+
       <GenerationCost generation={generation} />
 
       {generation?.temporaryVideoUrl && !generation.outputPath ? (
@@ -759,12 +1034,53 @@ function GenerateSceneButton({
         </p>
       ) : null}
 
-      <VideoPreview outputPath={generation?.outputPath} />
+      <VideoPreview
+        outputPath={generation?.outputPath}
+        version={generation?.updatedAt}
+      />
 
       {errorMessage ? (
         <p aria-live="polite" className="mt-3 text-sm font-medium text-red-700">
           {errorMessage}
         </p>
+      ) : null}
+    </div>
+  );
+}
+
+function GenerationProgress({
+  generation,
+  requestMessage,
+}: {
+  generation?: GenerationMetadata;
+  requestMessage: string;
+}) {
+  const progressMessage = requestMessage || generation?.progressMessage;
+  const activityLog = generation?.activityLog ?? [];
+
+  if (!progressMessage && activityLog.length === 0) {
+    return null;
+  }
+
+  return (
+    <div
+      aria-live="polite"
+      className="mt-3 rounded-md border border-teal-200 bg-teal-50 p-3 text-sm text-teal-950"
+    >
+      {progressMessage ? <p className="font-medium">{progressMessage}</p> : null}
+      {activityLog.length > 0 ? (
+        <details className="mt-2 text-xs leading-5 text-teal-900">
+          <summary className="cursor-pointer font-medium">
+            Журнал генерації
+          </summary>
+          <ol className="mt-2 grid gap-1">
+            {activityLog.map((entry) => (
+              <li key={`${entry.createdAt}-${entry.message}`}>
+                {formatLogTime(entry.createdAt)} — {entry.message}
+              </li>
+            ))}
+          </ol>
+        </details>
       ) : null}
     </div>
   );
@@ -901,6 +1217,16 @@ type AudioGenerationApiResponse = {
   error?: string;
 };
 
+type VoiceoverGenerationApiResponse = {
+  voiceoverOutput?: NonNullable<ReelScene["voiceoverOutput"]>;
+  error?: string;
+};
+
+type ScenePreviewApiResponse = {
+  previewOutputPath?: string;
+  error?: string;
+};
+
 type MusicGenerationApiResponse = {
   backgroundAudio?: ReelBackgroundAudioOutput;
   error?: string;
@@ -947,6 +1273,18 @@ function formatStatus(status: ReelScene["status"]) {
   }
 }
 
+function formatLogTime(value: string) {
+  return new Intl.DateTimeFormat("uk-UA", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).format(new Date(value));
+}
+
+function isRecoverableStatusFailure(generation: GenerationMetadata | undefined) {
+  return generation?.errorMessage === "fal.ai request failed with 405.";
+}
+
 function formatSpeechPolicy(policy: ReelScene["audioPlan"]["speechPolicy"]) {
   switch (policy) {
     case "dialogue_expected":
@@ -955,6 +1293,36 @@ function formatSpeechPolicy(policy: ReelScene["audioPlan"]["speechPolicy"]) {
     default:
       return "без голосу";
   }
+}
+
+function formatVoiceoverEmotion(
+  emotion: NonNullable<ReelScene["voiceoverOutput"]>["emotion"],
+) {
+  switch (emotion) {
+    case "sad":
+      return "сумна / вразлива";
+    case "warm":
+      return "тепла";
+    case "calm":
+      return "спокійна";
+    case "energetic":
+      return "енергійна";
+    case "neutral":
+    default:
+      return "нейтральна";
+  }
+}
+
+function formatSpeechRate(rate: number) {
+  if (rate < 0.95) {
+    return "повільніше";
+  }
+
+  if (rate > 1.05) {
+    return "швидше";
+  }
+
+  return "нормально";
 }
 
 function formatCueTime(cue: ReelScene["audioPlan"]["sfx"][number]) {

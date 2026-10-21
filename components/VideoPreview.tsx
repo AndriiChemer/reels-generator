@@ -1,8 +1,9 @@
 type VideoPreviewProps = {
   outputPath?: string;
+  version?: string;
 };
 
-export function VideoPreview({ outputPath }: VideoPreviewProps) {
+export function VideoPreview({ outputPath, version }: VideoPreviewProps) {
   if (!outputPath) {
     return null;
   }
@@ -12,19 +13,22 @@ export function VideoPreview({ outputPath }: VideoPreviewProps) {
       <video
         className="aspect-[9/16] max-h-[32rem] w-full bg-black object-contain"
         controls
+        key={`${outputPath}-${version || "current"}`}
         playsInline
         preload="metadata"
-        src={toMediaUrl(outputPath)}
+        src={toMediaUrl(outputPath, version)}
       />
     </div>
   );
 }
 
-function toMediaUrl(outputPath: string) {
+function toMediaUrl(outputPath: string, version?: string) {
   const normalizedPath = outputPath
     .split("/")
     .map((segment) => encodeURIComponent(segment))
     .join("/");
 
-  return `/api/media/${normalizedPath}`;
+  const cacheKey = version ? `?v=${encodeURIComponent(version)}` : "";
+
+  return `/api/media/${normalizedPath}${cacheKey}`;
 }

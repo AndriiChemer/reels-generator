@@ -4,6 +4,7 @@ import type {
   AudioGenerationResult,
   AudioOutputExtension,
   MusicGenerationInput,
+  SpeechGenerationInput,
 } from "@/lib/types/audio-generation";
 
 const ELEVENLABS_API_BASE_URL = "https://api.elevenlabs.io";
@@ -12,6 +13,7 @@ const DEFAULT_OUTPUT_FORMAT = "mp3_44100_128";
 const DEFAULT_PROMPT_INFLUENCE = 0.45;
 const DEFAULT_MUSIC_MODEL = "music_v2_5";
 const DEFAULT_MUSIC_OUTPUT_FORMAT = "mp3_44100_128";
+const DEFAULT_TTS_MODEL = "eleven_multilingual_v2";
 const MIN_DURATION_SECONDS = 0.5;
 const MAX_DURATION_SECONDS = 30;
 const MIN_MUSIC_DURATION_SECONDS = 3;
@@ -106,6 +108,62 @@ export class ElevenLabsAudioProvider implements AudioProvider {
       rawResponseHeaders: readResponseHeaders(response),
     };
   }
+
+  async generateSpeech(
+    input: SpeechGenerationInput,
+  ): Promise<AudioGenerationResult> {
+    if (!input.text.trim()) {
+      throw new Error("Текст для озвучення порожній.");
+    }
+
+    if (!input.voiceId.trim()) {
+      throw new Error("Вкажи Voice ID персонажа в ElevenLabs.");
+    }
+
+    const model = input.model || readTtsModel();
+    const outputFormat = input.outputFormat || readOutputFormat();
+    const response = await fetch(
+      `${ELEVENLABS_API_BASE_URL}/v1/text-to-speech/${encodeURIComponent(
+        input.voiceId,
+      )}?output_format=${encodeURIComponent(outputFormat)}`,
+      {
+        body: JSON.stringify({
+          model_id: model,
+          text: input.text,
+          voice_settings: {
+            similarity_boost: input.voiceSettings?.similarityBoost ?? 0.8,
+            stability: input.voiceSettings?.stability ?? 0.55,
+            style: input.voiceSettings?.style ?? 0,
+            speed: input.voiceSettings?.speed ?? 1,
+            use_speaker_boost: true,
+          },
+        }),
+        headers: {
+          "Content-Type": "application/json",
+          "xi-api-key": readApiKey(),
+        },
+        method: "POST",
+      },
+    );
+
+    if (!response.ok) {
+      throw new Error(await readElevenLabsError(response));
+    }
+
+    return {
+      provider: "elevenlabs",
+      model,
+      audioBytes: await response.arrayBuffer(),
+      contentType: response.headers.get("content-type") || "audio/mpeg",
+      extension: inferExtension(outputFormat),
+      outputFormat,
+      // ElevenLabs returns audio bytes, not a reliable duration. The cue window
+      // is used for alignment during the final FFmpeg render.
+      durationSeconds: 0,
+      characterCost: readNumericHeader(response, "character-cost"),
+      rawResponseHeaders: readResponseHeaders(response),
+    };
+  }
 }
 
 export function createElevenLabsAudioProvider() {
@@ -178,6 +236,10 @@ function readMusicOutputFormat() {
     process.env.ELEVENLABS_MUSIC_OUTPUT_FORMAT?.trim() ||
     DEFAULT_MUSIC_OUTPUT_FORMAT
   );
+}
+
+function readTtsModel() {
+  return process.env.ELEVENLABS_TTS_MODEL?.trim() || DEFAULT_TTS_MODEL;
 }
 
 function readPromptInfluence() {

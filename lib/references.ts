@@ -1,4 +1,4 @@
-import { readdir } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import {
   REFERENCES_DIR,
@@ -11,6 +11,14 @@ const SUPPORTED_REFERENCE_EXTENSIONS = new Set([
   ".png",
   ".webp",
 ]);
+
+const REFERENCE_MIME_TYPES: Record<string, string> = {
+  ".jpeg": "image/jpeg",
+  ".jpg": "image/jpeg",
+  ".png": "image/png",
+  ".webp": "image/webp",
+};
+const MAX_REFERENCE_IMAGE_BYTES = 10 * 1024 * 1024;
 
 export type ReferenceAsset = {
   name: string;
@@ -40,6 +48,41 @@ export function findReferencePath(
   );
 
   return referenceAsset?.path;
+}
+
+/**
+ * Reads a project reference as a data URL suitable for fal.ai image inputs.
+ * Only files inside the root `references/` directory are accepted.
+ */
+export async function readReferenceImageAsDataUrl(referencePath: string) {
+  const normalizedPath = referencePath.trim().replaceAll("\\", "/");
+
+  if (
+    !normalizedPath ||
+    path.isAbsolute(normalizedPath) ||
+    normalizedPath.startsWith("/") ||
+    normalizedPath.split("/").includes("..")
+  ) {
+    throw new Error("Некоректний шлях до референсу.");
+  }
+
+  const filePath = path.resolve(process.cwd(), normalizedPath);
+  assertInsideRoot(REFERENCES_DIR, filePath);
+
+  const extension = path.extname(filePath).toLowerCase();
+  const mimeType = REFERENCE_MIME_TYPES[extension];
+
+  if (!mimeType) {
+    throw new Error("Референс має бути JPG, PNG або WebP.");
+  }
+
+  const contents = await readFile(filePath);
+
+  if (contents.byteLength > MAX_REFERENCE_IMAGE_BYTES) {
+    throw new Error("Референс завеликий: максимальний розмір — 10 МБ.");
+  }
+
+  return `data:${mimeType};base64,${contents.toString("base64")}`;
 }
 
 function normalizeReferenceName(referenceName: string) {

@@ -6,6 +6,11 @@ export type GenerationStatus =
   | "completed"
   | "failed";
 
+export type GenerationLogEntry = {
+  createdAt: string;
+  message: string;
+};
+
 export type GenerationMetadata = {
   id: string;
   reelId: string;
@@ -16,8 +21,12 @@ export type GenerationMetadata = {
   durationSeconds: number;
   estimatedCostUsd?: number;
   temporaryVideoUrl?: string;
+  providerStatusUrl?: string;
+  providerResponseUrl?: string;
   outputPath?: string;
   errorMessage?: string;
+  progressMessage?: string;
+  activityLog?: GenerationLogEntry[];
   createdAt: string;
   updatedAt: string;
 };
