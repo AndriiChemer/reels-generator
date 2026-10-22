@@ -154,6 +154,10 @@ export type ReelScene = {
   referenceNames: string[];
   referencePaths: string[];
   status: ReelSceneStatus;
+  /** Ready-made clip from references/clips ("Відео: #endcard"); no AI generation. */
+  clipName?: string;
+  /** Where the scene video came from. Undefined means "generated". */
+  videoSource?: "generated" | "clip";
   keyframe?: SceneKeyframe;
   outputPath?: string;
   /** keyframe.generatedAt that the current video was generated from. */

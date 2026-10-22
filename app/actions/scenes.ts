@@ -35,6 +35,6 @@ export async function saveReelScriptAction(
 
   return {
     status: "success",
-    message: "Збережено. Незмінені сцени зберегли свої кадри й відео.",
+    message: "Збережено. Кадри, відео й звук лишились там, де їх частина сцени не змінилась.",
   };
 }

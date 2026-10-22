@@ -1,5 +1,8 @@
 import path from "node:path";
+import { findClip, listClipAssets, type ClipAsset } from "@/lib/clips";
+import { prepareClipForScene } from "@/lib/ffmpeg/prepareClip";
 import { readJsonFile, updateJsonFile, writeJsonFile } from "@/lib/files/json";
+import { getSceneOutputPath, toOutputRelativePath } from "@/lib/files/media";
 import { cleanSceneDescription } from "@/lib/prompts";
 import { findReferencePath, type ReferenceAsset } from "@/lib/references";
 import {
@@ -61,8 +64,8 @@ export function findNextScene(
 }
 
 /**
- * Parses the script into scenes. Scenes whose text did not change keep their
- * keyframe, video and audio, so editing one scene never discards the rest.
+ * Parses the script into scenes. Generated media stays where its part of the
+ * scene did not change (see keepGeneratedMedia).
  */
 export async function saveReelScenes(
   reelId: string,
@@ -76,12 +79,18 @@ export async function saveReelScenes(
     throw new Error("Reel draft does not exist.");
   }
 
-  const previousDocument = await readReelScenes(reelId);
-  const scenes = parseManualScenes(sourceText, characters, referenceAssets).map(
-    (scene) => keepGeneratedMedia(scene, previousDocument),
+  const normalizedText = sourceText.replace(/\r\n/g, "\n").trim();
+  const [previousDocument, clips] = await Promise.all([
+    readReelScenes(reelId),
+    listClipAssets(),
+  ]);
+  const scenes = await Promise.all(
+    parseManualScenes(normalizedText, characters, referenceAssets)
+      .map((scene) => keepGeneratedMedia(scene, previousDocument))
+      .map((scene) => attachClip(reelId, scene, clips)),
   );
   const document: ReelScenesDocument = {
-    sourceText: sourceText.trim(),
+    sourceText: normalizedText,
     scenes,
     updatedAt: new Date().toISOString(),
   };
@@ -276,7 +285,10 @@ function parseManualScenes(
     const { audioText, videoText } = splitAudioSection(rawText);
     const durationSeconds = parseDurationSeconds(rawText);
     const characterNames = uniqueValues(extractCharacterMentions(rawText));
-    const referenceNames = uniqueValues(extractReferenceMentions(rawText));
+    const clipName = parseClipName(rawText);
+    const referenceNames = uniqueValues(extractReferenceMentions(rawText)).filter(
+      (name) => name.toLowerCase() !== clipName,
+    );
     const scene: ReelScene = {
       id: `scene-${String(index + 1).padStart(2, "0")}`,
       order: index + 1,
@@ -284,6 +296,7 @@ function parseManualScenes(
       durationSeconds,
       timelineStartSeconds,
       transition: parseTransition(rawText),
+      clipName,
       videoPrompt: cleanSceneDescription(videoText),
       audioPlan: buildSceneAudioPlan({
         audioText,
@@ -308,29 +321,120 @@ function parseManualScenes(
   });
 }
 
+/**
+ * Keeps what is still valid after the script was edited, part by part:
+ * editing the "Звук" block must not throw away a paid video, and editing
+ * the picture must not throw away the voice.
+ */
+/**
+ * Adds or replaces the "Відео: #name" line of one scene in the script.
+ * The script stays the single source of truth for which scene uses a clip.
+ */
+export function setSceneClipInScript(
+  sourceText: string,
+  scene: ReelScene,
+  clipName: string,
+) {
+  const normalizedText = sourceText.replace(/\r\n/g, "\n");
+  const blockStart = normalizedText.indexOf(scene.rawText);
+
+  if (blockStart < 0) {
+    throw new Error("Не вдалося знайти сцену в сценарії. Збережи сценарій і спробуй ще раз.");
+  }
+
+  const blockWithoutClip = scene.rawText.replace(CLIP_LINE_PATTERN, "").trim();
+  const nextBlock = `Відео: #${clipName}\n${blockWithoutClip}`;
+
+  return (
+    normalizedText.slice(0, blockStart) +
+    nextBlock +
+    normalizedText.slice(blockStart + scene.rawText.length)
+  );
+}
+
+const CLIP_LINE_PATTERN = /^\s*(?:відео|video|clip|кліп)\s*:\s*#([a-z0-9_-]+)\s*$\n?/imu;
+
+function parseClipName(rawText: string) {
+  return rawText.match(CLIP_LINE_PATTERN)?.[1]?.toLowerCase();
+}
+
+/**
+ * A scene with "Відео: #name" gets the library clip as its video, trimmed to
+ * the scene length. If the clip is missing, the scene stays a draft.
+ */
+async function attachClip(
+  reelId: string,
+  scene: ReelScene,
+  clips: ClipAsset[],
+): Promise<ReelScene> {
+  if (!scene.clipName) {
+    return scene.videoSource === "clip"
+      ? { ...scene, status: "draft", outputPath: undefined, videoSource: undefined }
+      : scene;
+  }
+
+  const clip = findClip(scene.clipName, clips);
+
+  if (!clip) {
+    return { ...scene, status: "draft", outputPath: undefined, videoSource: undefined };
+  }
+
+  const outputPath = getSceneOutputPath(reelId, scene.id);
+
+  await prepareClipForScene({
+    inputPath: clip.filePath,
+    outputPath,
+    durationSeconds: scene.durationSeconds,
+  });
+
+  return {
+    ...scene,
+    status: "completed",
+    outputPath: toOutputRelativePath(outputPath),
+    videoSource: "clip",
+    keyframe: undefined,
+    videoKeyframeVersion: undefined,
+  };
+}
+
 function keepGeneratedMedia(
   scene: ReelScene,
   previousDocument: ReelScenesDocument | null,
 ): ReelScene {
-  const previousScene = previousDocument?.scenes.find(
-    ({ id, rawText }) => id === scene.id && rawText === scene.rawText,
-  );
+  const previous = previousDocument?.scenes.find(({ id }) => id === scene.id);
 
-  if (!previousScene) {
+  if (!previous) {
     return scene;
   }
 
+  const isSamePicture =
+    previous.videoPrompt === scene.videoPrompt &&
+    previous.durationSeconds === scene.durationSeconds &&
+    (previous.transition ?? "cut") === scene.transition &&
+    previous.characterIds.join() === scene.characterIds.join() &&
+    previous.referencePaths.join() === scene.referencePaths.join();
+  const isSameVoice = previous.audioPlan.voicePrompt === scene.audioPlan.voicePrompt;
+  const isSameSoundEffects =
+    previous.durationSeconds === scene.durationSeconds &&
+    JSON.stringify(previous.audioPlan.sfx) === JSON.stringify(scene.audioPlan.sfx);
+  const isSameScene = isSamePicture && isSameVoice && isSameSoundEffects;
+
   return {
     ...scene,
-    status: previousScene.status,
-    keyframe: previousScene.keyframe,
-    outputPath: previousScene.outputPath,
-    videoKeyframeVersion: previousScene.videoKeyframeVersion,
-    audioOutput: previousScene.audioOutput,
-    voiceoverOutput: previousScene.voiceoverOutput,
-    previewOutputPath: previousScene.previewOutputPath,
-    previewRenderedAt: previousScene.previewRenderedAt,
-    previewRenderError: previousScene.previewRenderError,
+    ...(isSamePicture && {
+      status: previous.status,
+      keyframe: previous.keyframe,
+      outputPath: previous.outputPath,
+      videoKeyframeVersion: previous.videoKeyframeVersion,
+      videoSource: previous.videoSource,
+    }),
+    ...(isSameVoice && { voiceoverOutput: previous.voiceoverOutput }),
+    ...(isSameSoundEffects && { audioOutput: previous.audioOutput }),
+    ...(isSameScene && {
+      previewOutputPath: previous.previewOutputPath,
+      previewRenderedAt: previous.previewRenderedAt,
+      previewRenderError: previous.previewRenderError,
+    }),
   };
 }
 
@@ -567,9 +671,11 @@ function isMusicCue(description: string) {
   return /(music|bgm|melody|музик|мелод|саундтрек|фонова)/iu.test(description);
 }
 
+/** A line someone speaks. "No voice" / "без голосу" is an instruction, not a line. */
 function isVoiceCue(description: string) {
-  return /(voice|speech|dialogue|голос|мовлен|діалог|реплік|говорить|каже)/iu.test(
-    description,
+  return (
+    !isNoSpeechCue(description) &&
+    /(voice|speech|dialogue|голос|мовлен|діалог|реплік|говорить|каже)/iu.test(description)
   );
 }
 

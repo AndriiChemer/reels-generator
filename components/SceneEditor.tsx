@@ -24,6 +24,8 @@ import type {
 
 type SceneEditorProps = {
   reel: ReelDraft;
+  /** Names of reusable clips in references/clips. */
+  clipNames: string[];
   scenes: ReelScene[];
   generations: GenerationMetadata[];
   warnings: SceneWarning[];
@@ -39,6 +41,7 @@ export type BatchTask = "keyframes" | "videos" | "voiceovers" | "soundEffects";
  */
 export function SceneEditor({
   reel,
+  clipNames,
   scenes: initialScenes,
   generations: initialGenerations,
   warnings,
@@ -139,6 +142,10 @@ export function SceneEditor({
     let previousWasRegenerated = false;
 
     for (const [index, scene] of scenes.entries()) {
+      if (scene.clipName) {
+        continue;
+      }
+
       const needsKeyframe =
         !scene.keyframe ||
         previousWasRegenerated ||
@@ -166,6 +173,7 @@ export function SceneEditor({
 
     for (const scene of scenes) {
       const needsVideo =
+        !scene.clipName &&
         scene.keyframe &&
         !isVideoInProgress(scene) &&
         (!hasVideo(scene) || isVideoOutdated(scene));
@@ -216,7 +224,7 @@ export function SceneEditor({
     setBatchTask(null);
   }
 
-  const keyframeCount = scenes.filter((scene) => scene.keyframe).length;
+  const keyframeCount = scenes.filter((scene) => scene.keyframe || scene.clipName).length;
   const videoCount = scenes.filter(hasVideo).length;
 
   return (
@@ -265,6 +273,7 @@ export function SceneEditor({
             onGenerateVideo={() => generateVideo(scene)}
             onGenerationUpdate={applyGeneration}
             onSceneChange={(patch) => updateScene(scene.id, () => patch)}
+            clipNames={clipNames}
             previousScene={scenes[index - 1]}
             reel={reel}
             runningTask={runningTasks[scene.id]}

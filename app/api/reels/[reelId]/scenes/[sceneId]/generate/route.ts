@@ -39,6 +39,10 @@ export async function POST(
     return jsonError("Сцену не знайдено. Спершу збережи блок сцен.", 404);
   }
 
+  if (scene.clipName) {
+    return jsonError("Ця сцена використовує готовий кліп — генерація не потрібна.", 422);
+  }
+
   if (!scene.keyframe) {
     return jsonError("Спершу згенеруй кадр сцени — з нього стартує відео.", 422);
   }

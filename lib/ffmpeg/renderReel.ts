@@ -86,6 +86,7 @@ export async function renderReel({
       sceneAudioPaths,
       sceneVoiceoverInputs,
       sceneDurations: completedScenes.map((scene) => scene.durationSeconds),
+      sceneFilmLooks: completedScenes.map((scene) => scene.videoSource !== "clip"),
       sceneVideoPaths: inputPaths,
     }),
   );
@@ -126,6 +127,7 @@ export async function renderScenePreview({
       sceneDurationSeconds: scene.durationSeconds,
       videoPath,
       voiceoverInput,
+      withFilmLook: scene.videoSource !== "clip",
     }),
   );
 
@@ -150,6 +152,7 @@ function buildFfmpegArgs({
   sceneAudioPaths,
   sceneVoiceoverInputs,
   sceneDurations,
+  sceneFilmLooks,
   sceneVideoPaths,
 }: {
   backgroundAudioPath?: string;
@@ -157,6 +160,8 @@ function buildFfmpegArgs({
   sceneAudioPaths: Array<string | undefined>;
   sceneVoiceoverInputs: Array<VoiceoverInput | undefined>;
   sceneDurations: number[];
+  /** false for library clips: brand assets keep their exact colors. */
+  sceneFilmLooks: boolean[];
   sceneVideoPaths: string[];
 }) {
   const inputArgs: string[] = [];
@@ -183,7 +188,7 @@ function buildFfmpegArgs({
   );
 
   const videoFilters = videoInputs.map((inputIndex, index) =>
-    buildSceneVideoFilter(inputIndex, `v${index}`),
+    buildSceneVideoFilter(inputIndex, `v${index}`, sceneDurations[index], sceneFilmLooks[index]),
   );
   const sfxFilters = sceneDurations.map((durationSeconds, index) =>
     buildSfxTrack(sfxInputs[index], durationSeconds, `a${index}`),
@@ -365,17 +370,14 @@ function buildScenePreviewArgs({
   sceneDurationSeconds,
   videoPath,
   voiceoverInput,
+  withFilmLook,
 }: {
   outputPath: string;
   sceneAudioPath?: string;
   sceneDurationSeconds: number;
   videoPath: string;
-  voiceoverInput?: {
-    path: string;
-    speechRate: number;
-    speedAppliedNatively: boolean;
-    startSeconds: number;
-  };
+  voiceoverInput?: VoiceoverInput;
+  withFilmLook: boolean;
 }) {
   const sceneAudioInputIndex = sceneAudioPath ? 1 : undefined;
   const voiceoverInputIndex = voiceoverInput
@@ -384,7 +386,7 @@ function buildScenePreviewArgs({
       : 1
     : undefined;
   const duration = formatDuration(sceneDurationSeconds);
-  const videoFilter = buildSceneVideoFilter(0, "v");
+  const videoFilter = buildSceneVideoFilter(0, "v", sceneDurationSeconds, withFilmLook);
   const audioFilter = buildSceneAudioFilter({
     durationSeconds: sceneDurationSeconds,
     inputIndex: sceneAudioInputIndex,
@@ -427,11 +429,24 @@ function buildScenePreviewArgs({
   ];
 }
 
-function buildSceneVideoFilter(inputIndex: number, outputLabel: string) {
+/**
+ * One scene video: exactly the scene length (Kling returns e.g. 4.042 s for
+ * "4", and those extra frames would push the picture out of sync with the
+ * voice), vertical 1080×1920, optional shared grade.
+ */
+function buildSceneVideoFilter(
+  inputIndex: number,
+  outputLabel: string,
+  durationSeconds: number,
+  withFilmLook = true,
+) {
+  const duration = formatDuration(durationSeconds);
+
   return (
-    `[${inputIndex}:v]scale=${OUTPUT_WIDTH}:${OUTPUT_HEIGHT}:force_original_aspect_ratio=increase,` +
-    `crop=${OUTPUT_WIDTH}:${OUTPUT_HEIGHT},fps=${OUTPUT_FPS},setsar=1,` +
-    `${FILM_LOOK_FILTER}[${outputLabel}]`
+    `[${inputIndex}:v]tpad=stop_mode=clone:stop_duration=1,trim=duration=${duration},setpts=PTS-STARTPTS,` +
+    `scale=${OUTPUT_WIDTH}:${OUTPUT_HEIGHT}:force_original_aspect_ratio=increase,` +
+    `crop=${OUTPUT_WIDTH}:${OUTPUT_HEIGHT},fps=${OUTPUT_FPS},setsar=1` +
+    `${withFilmLook ? `,${FILM_LOOK_FILTER}` : ""}[${outputLabel}]`
   );
 }
 

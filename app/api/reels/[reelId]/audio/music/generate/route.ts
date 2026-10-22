@@ -94,6 +94,7 @@ function buildReelMusicPrompt({
   return [
     "Instrumental background music for a short vertical social video.",
     "No vocals, spoken words, dialogue, or recognizable song references.",
+    "No bells, chimes, high plucks or notification-like sounds.",
     style ? `Visual style: ${compactText(style, 320)}.` : "",
     musicDirections.length > 0
       ? `Music direction: ${compactText(musicDirections.join("; "), 700)}.`

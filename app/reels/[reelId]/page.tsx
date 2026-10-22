@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { SceneEditor } from "@/components/SceneEditor";
 import { ScriptForm } from "@/components/ScriptForm";
 import { listCharacters } from "@/lib/characters";
+import { listClipAssets } from "@/lib/clips";
 import { listGenerations } from "@/lib/generations";
 import { listReferenceAssets } from "@/lib/references";
 import { readReelDraft } from "@/lib/reels";
@@ -18,13 +19,14 @@ export default async function ReelEditorPage({
   params: Promise<{ reelId: string }>;
 }) {
   const { reelId } = await params;
-  const [reel, scenesDocument, characters, referenceAssets, generations] =
+  const [reel, scenesDocument, characters, referenceAssets, generations, clips] =
     await Promise.all([
       readReelDraft(reelId),
       readReelScenes(reelId),
       listCharacters(),
       listReferenceAssets(),
       listGenerations(reelId),
+      listClipAssets(),
     ]);
 
   if (!reel) {
@@ -66,6 +68,8 @@ export default async function ReelEditorPage({
         <div className="mt-5">
           <ScriptForm
             characters={characters}
+            // Remount when the script changes on the server (e.g. a clip was added).
+            key={scenesDocument?.updatedAt}
             reel={reel}
             sourceText={scenesDocument?.sourceText}
           />
@@ -74,6 +78,7 @@ export default async function ReelEditorPage({
 
       {scenes.length > 0 ? (
         <SceneEditor
+          clipNames={clips.map((clip) => clip.name)}
           generations={generations}
           // Remount after the script is saved so the storyboard shows new scenes.
           key={scenesDocument?.updatedAt}

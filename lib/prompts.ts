@@ -158,7 +158,7 @@ export function cleanSceneDescription(text: string) {
       continue;
     }
 
-    if (/^\s*(?:duration|тривалість|transition|перехід)\s*:/iu.test(line)) {
+    if (/^\s*(?:duration|тривалість|transition|перехід|video|відео|clip|кліп)\s*:/iu.test(line)) {
       continue;
     }
 

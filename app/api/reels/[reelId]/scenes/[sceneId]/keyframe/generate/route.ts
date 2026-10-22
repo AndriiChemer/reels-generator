@@ -42,6 +42,10 @@ export async function POST(
     return jsonError("Сцену не знайдено.", 404);
   }
 
+  if (scene.clipName) {
+    return jsonError("Ця сцена використовує готовий кліп — кадр не потрібен.", 422);
+  }
+
   const previousKeyframe = findPreviousScene(scenesDocument, scene)?.keyframe;
 
   try {

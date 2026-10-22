@@ -2,6 +2,8 @@ import path from "node:path";
 
 export const DATA_DIR = path.join(process.cwd(), "data");
 export const REFERENCES_DIR = path.join(process.cwd(), "references");
+/** Reusable ready-made videos, e.g. the logo end card. Used as "Відео: #name". */
+export const CLIPS_DIR = path.join(REFERENCES_DIR, "clips");
 export const OUTPUTS_DIR = path.join(process.cwd(), "outputs");
 export const OUTPUT_AUDIO_DIR = path.join(OUTPUTS_DIR, "audio");
 export const OUTPUT_AUDIO_REELS_DIR = path.join(OUTPUT_AUDIO_DIR, "reels");

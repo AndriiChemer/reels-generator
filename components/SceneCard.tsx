@@ -1,5 +1,7 @@
 "use client";
 
+import { useState } from "react";
+import { ClipPicker } from "@/components/ClipPicker";
 import { SceneAudioPanel } from "@/components/SceneAudioPanel";
 import { ErrorText, SmallButton } from "@/components/ui";
 import { useGenerationPolling } from "@/components/useGenerationPolling";
@@ -19,6 +21,7 @@ export type SceneTask = "keyframe" | "video" | "audio";
 
 type SceneCardProps = {
   reel: ReelDraft;
+  clipNames: string[];
   scene: ReelScene;
   previousScene?: ReelScene;
   generation?: GenerationMetadata;
@@ -36,6 +39,7 @@ type SceneCardProps = {
 /** One storyboard frame: keyframe → video, with sound in the details. */
 export function SceneCard({
   reel,
+  clipNames,
   scene,
   previousScene,
   generation,
@@ -50,6 +54,8 @@ export function SceneCard({
   onSceneChange,
 }: SceneCardProps) {
   useGenerationPolling(generation, onGenerationUpdate);
+  const [isClipPickerOpen, setIsClipPickerOpen] = useState(false);
+  const sceneUrl = `/api/reels/${reel.id}/scenes/${scene.id}`;
 
   const isBusy = Boolean(runningTask) || isBatchRunning;
   const isRendering = isVideoInProgress(scene) || runningTask === "video";
@@ -62,6 +68,9 @@ export function SceneCard({
       <header className="flex items-center justify-between gap-2 text-sm">
         <span className="font-semibold">Сцена {scene.order}</span>
         <span className="flex gap-1.5 text-xs text-[var(--muted)]">
+          {scene.clipName ? (
+            <Badge title="Готове відео з бібліотеки">кліп #{scene.clipName}</Badge>
+          ) : null}
           {scene.transition === "continue" ? (
             <Badge title="Без склейки з попередньою сценою">↪ продовження</Badge>
           ) : null}
@@ -79,25 +88,39 @@ export function SceneCard({
 
       <CharacterChips scene={scene} warning={warning} />
 
-      <div className="grid grid-cols-2 gap-2">
-        <SmallButton
-          disabled={isBusy}
-          onClick={onGenerateKeyframe}
-        >
-          {runningTask === "keyframe"
-            ? "Малюємо…"
-            : scene.keyframe
-              ? "Новий кадр"
-              : "Кадр"}
-        </SmallButton>
-        <SmallButton
-          disabled={isBusy || isRendering || !scene.keyframe}
-          onClick={onGenerateVideo}
-          variant="primary"
-        >
-          {isRendering ? "Генерується…" : hasVideo(scene) ? "Нове відео" : "Відео"}
-        </SmallButton>
-      </div>
+      {scene.clipName ? null : (
+        <div className="grid grid-cols-2 gap-2">
+          <SmallButton disabled={isBusy} onClick={onGenerateKeyframe}>
+            {runningTask === "keyframe"
+              ? "Малюємо…"
+              : scene.keyframe
+                ? "Новий кадр"
+                : "Кадр"}
+          </SmallButton>
+          <SmallButton
+            disabled={isBusy || isRendering || !scene.keyframe}
+            onClick={onGenerateVideo}
+            variant="primary"
+          >
+            {isRendering ? "Генерується…" : hasVideo(scene) ? "Нове відео" : "Відео"}
+          </SmallButton>
+        </div>
+      )}
+
+      <button
+        className="w-fit text-xs font-medium text-[var(--accent-strong)] hover:underline"
+        onClick={() => setIsClipPickerOpen((isOpen) => !isOpen)}
+        type="button"
+      >
+        {scene.clipName ? "Замінити кліп" : "Або готове відео без генерації"}
+      </button>
+      {isClipPickerOpen ? (
+        <ClipPicker
+          clipNames={clipNames}
+          defaultName={scene.clipName}
+          sceneUrl={sceneUrl}
+        />
+      ) : null}
 
       {notes.map((note) => (
         <p className="text-xs leading-5 text-amber-800" key={note}>
@@ -274,6 +297,10 @@ function getSceneNotes(
   warning: SceneWarning | undefined,
 ) {
   const notes: string[] = [];
+
+  if (scene.clipName && !hasVideo(scene)) {
+    notes.push(`Кліпу #${scene.clipName} немає в references/clips — завантаж його.`);
+  }
 
   if (warning) {
     notes.push("Деякі @/# не знайдено — для них не буде референсу.");
