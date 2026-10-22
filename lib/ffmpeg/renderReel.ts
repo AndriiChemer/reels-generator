@@ -18,6 +18,25 @@ type RenderReelInput = {
 const OUTPUT_WIDTH = 1080;
 const OUTPUT_HEIGHT = 1920;
 const OUTPUT_FPS = 30;
+/**
+ * One shared grade for every scene: AI clips come out with slightly
+ * different contrast and color, a common grade and light grain glue them.
+ */
+const FILM_LOOK_FILTER =
+  "eq=contrast=1.04:saturation=0.94:gamma=0.98,noise=alls=4:allf=t";
+
+/**
+ * Mix levels. The voice leads, SFX sit a bit lower, music is a quiet bed that
+ * ducks further while someone speaks. The master is normalized to -14 LUFS,
+ * the loudness Instagram and TikTok play at.
+ */
+const VOICE_VOLUME = 1;
+const SFX_VOLUME = 0.7;
+const MUSIC_VOLUME = 0.35;
+const AUDIO_FORMAT = "aformat=sample_rates=48000:channel_layouts=stereo";
+const MUSIC_DUCKING_FILTER =
+  "sidechaincompress=threshold=0.02:ratio=6:attack=20:release=400";
+const LOUDNESS_FILTER = "loudnorm=I=-14:TP=-1.5:LRA=11";
 
 export async function renderReel({
   reelId,
@@ -113,6 +132,18 @@ export async function renderScenePreview({
   return toOutputRelativePath(outputPath);
 }
 
+type VoiceoverInput = {
+  path: string;
+  speechRate: number;
+  speedAppliedNatively: boolean;
+  startSeconds: number;
+};
+
+/**
+ * Final reel: videos are concatenated with their scene SFX, voice lines are
+ * placed on one reel-wide timeline (a line may run into the next scene),
+ * music ducks under the voice and the result is normalized for Reels.
+ */
 function buildFfmpegArgs({
   backgroundAudioPath,
   outputPath,
@@ -124,79 +155,67 @@ function buildFfmpegArgs({
   backgroundAudioPath?: string;
   outputPath: string;
   sceneAudioPaths: Array<string | undefined>;
-  sceneVoiceoverInputs: Array<
-    | {
-        path: string;
-        speechRate: number;
-        speedAppliedNatively: boolean;
-        startSeconds: number;
-      }
-    | undefined
-  >;
+  sceneVoiceoverInputs: Array<VoiceoverInput | undefined>;
   sceneDurations: number[];
   sceneVideoPaths: string[];
 }) {
-  const inputArgs = [
-    ...sceneVideoPaths.flatMap((inputPath) => ["-i", inputPath]),
-    ...(backgroundAudioPath
-      ? ["-stream_loop", "-1", "-i", backgroundAudioPath]
-      : []),
-    ...sceneAudioPaths.flatMap((inputPath) =>
-      inputPath ? ["-i", inputPath] : [],
-    ),
-    ...sceneVoiceoverInputs.flatMap((input) =>
-      input ? ["-i", input.path] : [],
-    ),
-  ];
-  const videoFilters = sceneVideoPaths
-    .map(
-      (_inputPath, index) =>
-        `[${index}:v]scale=${OUTPUT_WIDTH}:${OUTPUT_HEIGHT}:force_original_aspect_ratio=increase,` +
-        `crop=${OUTPUT_WIDTH}:${OUTPUT_HEIGHT},fps=${OUTPUT_FPS},setsar=1[v${index}]`,
-    )
-    .join(";");
-  const sceneAudioInputIndexes = getSceneAudioInputIndexes({
-    backgroundAudioPath,
-    sceneAudioPaths,
-    sceneVideoPaths,
+  const inputArgs: string[] = [];
+  let inputCount = 0;
+  const addInput = (args: string[]) => {
+    inputArgs.push(...args);
+    return inputCount++;
+  };
+
+  const videoInputs = sceneVideoPaths.map((videoPath) => addInput(["-i", videoPath]));
+  const musicInput = backgroundAudioPath
+    ? addInput(["-stream_loop", "-1", "-i", backgroundAudioPath])
+    : undefined;
+  const sfxInputs = sceneAudioPaths.map((audioPath) =>
+    audioPath ? addInput(["-i", audioPath]) : undefined,
+  );
+  const voiceInputs = sceneVoiceoverInputs.map((voiceover) =>
+    voiceover ? addInput(["-i", voiceover.path]) : undefined,
+  );
+
+  const totalSeconds = sceneDurations.reduce((total, duration) => total + duration, 0);
+  const sceneStarts = sceneDurations.map((_duration, index) =>
+    sceneDurations.slice(0, index).reduce((total, duration) => total + duration, 0),
+  );
+
+  const videoFilters = videoInputs.map((inputIndex, index) =>
+    buildSceneVideoFilter(inputIndex, `v${index}`),
+  );
+  const sfxFilters = sceneDurations.map((durationSeconds, index) =>
+    buildSfxTrack(sfxInputs[index], durationSeconds, `a${index}`),
+  );
+  const concatFilter =
+    videoInputs.map((_inputIndex, index) => `[v${index}][a${index}]`).join("") +
+    `concat=n=${videoInputs.length}:v=1:a=1[v][sfx]`;
+  const voiceClips = sceneVoiceoverInputs.flatMap((voiceover, index) => {
+    const inputIndex = voiceInputs[index];
+
+    return voiceover && inputIndex !== undefined
+      ? [
+          {
+            label: `vo${index}`,
+            filter: buildVoiceClip(
+              inputIndex,
+              voiceover,
+              sceneStarts[index] + voiceover.startSeconds,
+              `vo${index}`,
+            ),
+          },
+        ]
+      : [];
   });
-  const sceneVoiceoverInputIndexes = getSceneVoiceoverInputIndexes({
-    backgroundAudioPath,
-    sceneAudioPaths,
-    sceneVideoPaths,
-    sceneVoiceoverInputs,
-  });
-  const sceneAudioFilters = sceneDurations
-    .map((durationSeconds, index) =>
-      buildSceneAudioFilter({
-        durationSeconds,
-        inputIndex: sceneAudioInputIndexes[index],
-        sceneIndex: index,
-        voiceoverInputIndex: sceneVoiceoverInputIndexes[index],
-        voiceoverSpeedAppliedNatively:
-          sceneVoiceoverInputs[index]?.speedAppliedNatively,
-        voiceoverSpeechRate: sceneVoiceoverInputs[index]?.speechRate,
-        voiceoverStartSeconds: sceneVoiceoverInputs[index]?.startSeconds,
-      }),
-    )
-    .join(";");
-  const concatInputs = sceneVideoPaths
-    .map((_inputPath, index) => `[v${index}][a${index}]`)
-    .join("");
-  const concatFilter = `${concatInputs}concat=n=${sceneVideoPaths.length}:v=1:a=1[v][scene-audio]`;
-  const audioMixFilter = buildAudioMixFilter({
-    backgroundAudioPath,
-    backgroundInputIndex: backgroundAudioPath ? sceneVideoPaths.length : undefined,
-    totalDurationSeconds: sceneDurations.reduce(
-      (total, durationSeconds) => total + durationSeconds,
-      0,
-    ),
-  });
+
   const filterComplex = [
-    videoFilters,
-    sceneAudioFilters,
+    ...videoFilters,
+    ...sfxFilters,
     concatFilter,
-    audioMixFilter,
+    ...voiceClips.map((clip) => clip.filter),
+    buildVoiceBus(voiceClips.map((clip) => clip.label), totalSeconds),
+    buildFinalMix(musicInput, totalSeconds),
   ].join(";");
 
   return [
@@ -226,63 +245,71 @@ function buildFfmpegArgs({
   ];
 }
 
-function getSceneAudioInputIndexes({
-  backgroundAudioPath,
-  sceneAudioPaths,
-  sceneVideoPaths,
-}: {
-  backgroundAudioPath?: string;
-  sceneAudioPaths: Array<string | undefined>;
-  sceneVideoPaths: string[];
-}) {
-  let nextInputIndex = sceneVideoPaths.length + (backgroundAudioPath ? 1 : 0);
+/** SFX of one scene, padded or trimmed to the scene length. */
+function buildSfxTrack(
+  inputIndex: number | undefined,
+  durationSeconds: number,
+  outputLabel: string,
+) {
+  const duration = formatDuration(durationSeconds);
 
-  return sceneAudioPaths.map((audioPath) => {
-    if (!audioPath) {
-      return undefined;
-    }
-
-    const inputIndex = nextInputIndex;
-    nextInputIndex += 1;
-
-    return inputIndex;
-  });
+  return inputIndex === undefined
+    ? `anullsrc=r=48000:cl=stereo,atrim=duration=${duration}[${outputLabel}]`
+    : `[${inputIndex}:a]${AUDIO_FORMAT},apad=whole_dur=${duration},atrim=duration=${duration},` +
+        `asetpts=N/SR/TB,volume=${SFX_VOLUME}[${outputLabel}]`;
 }
 
-function getSceneVoiceoverInputIndexes({
-  backgroundAudioPath,
-  sceneAudioPaths,
-  sceneVideoPaths,
-  sceneVoiceoverInputs,
-}: {
-  backgroundAudioPath?: string;
-  sceneAudioPaths: Array<string | undefined>;
-  sceneVideoPaths: string[];
-  sceneVoiceoverInputs: Array<
-    | {
-        path: string;
-        speechRate: number;
-        speedAppliedNatively: boolean;
-        startSeconds: number;
-      }
-    | undefined
-  >;
-}) {
-  let nextInputIndex =
-    sceneVideoPaths.length +
-    (backgroundAudioPath ? 1 : 0) +
-    sceneAudioPaths.filter(Boolean).length;
+/** One voice line placed at its absolute time in the reel. */
+function buildVoiceClip(
+  inputIndex: number,
+  voiceover: VoiceoverInput,
+  reelSeconds: number,
+  outputLabel: string,
+) {
+  const delayMilliseconds = Math.max(0, Math.round(reelSeconds * 1000));
+  const tempoFilter = voiceover.speedAppliedNatively
+    ? ""
+    : `atempo=${formatSpeechRate(voiceover.speechRate)},`;
 
-  return sceneVoiceoverInputs.map((input) => {
-    if (!input) {
-      return undefined;
-    }
+  return (
+    `[${inputIndex}:a]${AUDIO_FORMAT},asetpts=N/SR/TB,${tempoFilter}` +
+    `adelay=${delayMilliseconds}:all=1,volume=${VOICE_VOLUME}[${outputLabel}]`
+  );
+}
 
-    const inputIndex = nextInputIndex;
-    nextInputIndex += 1;
+/** All voice lines on one track as long as the reel. */
+function buildVoiceBus(clipLabels: string[], totalSeconds: number) {
+  const duration = formatDuration(totalSeconds);
+  const fitToReel = `apad=whole_dur=${duration},atrim=duration=${duration}`;
 
-    return inputIndex;
-  });
+  if (clipLabels.length === 0) {
+    return `anullsrc=r=48000:cl=stereo,atrim=duration=${duration}[voice]`;
+  }
+
+  const inputs = clipLabels.map((label) => `[${label}]`).join("");
+
+  return clipLabels.length === 1
+    ? `${inputs}${fitToReel}[voice]`
+    : `${inputs}amix=inputs=${clipLabels.length}:duration=longest:normalize=0,${fitToReel}[voice]`;
+}
+
+/** SFX + voice + music (ducked under the voice), loudness-normalized. */
+function buildFinalMix(musicInput: number | undefined, totalSeconds: number) {
+  const master = `${LOUDNESS_FILTER},${AUDIO_FORMAT}[a]`;
+
+  if (musicInput === undefined) {
+    return `[sfx][voice]amix=inputs=2:duration=first:normalize=0,${master}`;
+  }
+
+  const duration = formatDuration(totalSeconds);
+
+  return [
+    `[${musicInput}:a]${AUDIO_FORMAT},apad=whole_dur=${duration},atrim=duration=${duration},` +
+      `asetpts=N/SR/TB,volume=${MUSIC_VOLUME}[music-raw]`,
+    "[voice]asplit=2[voice-mix][voice-key]",
+    `[music-raw][voice-key]${MUSIC_DUCKING_FILTER}[music]`,
+    `[sfx][voice-mix][music]amix=inputs=3:duration=first:normalize=0,${master}`,
+  ].join(";");
 }
 
 function buildSceneAudioFilter({
@@ -305,7 +332,7 @@ function buildSceneAudioFilter({
   const duration = formatDuration(durationSeconds);
   const sceneAudioSource =
     typeof inputIndex === "number"
-      ? `[${inputIndex}:a]aresample=48000,apad=whole_dur=${duration},atrim=duration=${duration},asetpts=N/SR/TB[sfx${sceneIndex}]`
+      ? `[${inputIndex}:a]${AUDIO_FORMAT},apad=whole_dur=${duration},atrim=duration=${duration},asetpts=N/SR/TB,volume=${SFX_VOLUME}[sfx${sceneIndex}]`
       : `anullsrc=r=48000:cl=stereo,atrim=duration=${duration},asetpts=N/SR/TB[sfx${sceneIndex}]`;
 
   if (typeof voiceoverInputIndex !== "number") {
@@ -320,7 +347,7 @@ function buildSceneAudioFilter({
     ? ""
     : `atempo=${formatSpeechRate(voiceoverSpeechRate)},`;
   const voiceoverSource =
-    `[${voiceoverInputIndex}:a]aresample=48000,asetpts=N/SR/TB,` +
+    `[${voiceoverInputIndex}:a]${AUDIO_FORMAT},asetpts=N/SR/TB,` +
     voiceoverTempoFilter +
     `adelay=${delayMilliseconds}:all=1,apad=whole_dur=${duration},` +
     `atrim=duration=${duration}[voice${sceneIndex}]`;
@@ -328,7 +355,7 @@ function buildSceneAudioFilter({
   return [
     sceneAudioSource,
     voiceoverSource,
-    `[sfx${sceneIndex}][voice${sceneIndex}]amix=inputs=2:duration=first:dropout_transition=0[a${sceneIndex}]`,
+    `[sfx${sceneIndex}][voice${sceneIndex}]amix=inputs=2:duration=first:normalize=0[a${sceneIndex}]`,
   ].join(";");
 }
 
@@ -357,9 +384,7 @@ function buildScenePreviewArgs({
       : 1
     : undefined;
   const duration = formatDuration(sceneDurationSeconds);
-  const videoFilter =
-    `[0:v]scale=${OUTPUT_WIDTH}:${OUTPUT_HEIGHT}:force_original_aspect_ratio=increase,` +
-    `crop=${OUTPUT_WIDTH}:${OUTPUT_HEIGHT},fps=${OUTPUT_FPS},setsar=1[v]`;
+  const videoFilter = buildSceneVideoFilter(0, "v");
   const audioFilter = buildSceneAudioFilter({
     durationSeconds: sceneDurationSeconds,
     inputIndex: sceneAudioInputIndex,
@@ -402,25 +427,12 @@ function buildScenePreviewArgs({
   ];
 }
 
-function buildAudioMixFilter({
-  backgroundAudioPath,
-  backgroundInputIndex,
-  totalDurationSeconds,
-}: {
-  backgroundAudioPath?: string;
-  backgroundInputIndex?: number;
-  totalDurationSeconds: number;
-}) {
-  if (!backgroundAudioPath || typeof backgroundInputIndex !== "number") {
-    return "[scene-audio]anull[a]";
-  }
-
-  const duration = formatDuration(totalDurationSeconds);
-
-  return [
-    `[${backgroundInputIndex}:a]aresample=48000,apad=whole_dur=${duration},atrim=duration=${duration},asetpts=N/SR/TB,volume=0.22[background]`,
-    "[scene-audio][background]amix=inputs=2:duration=first:dropout_transition=0[a]",
-  ].join(";");
+function buildSceneVideoFilter(inputIndex: number, outputLabel: string) {
+  return (
+    `[${inputIndex}:v]scale=${OUTPUT_WIDTH}:${OUTPUT_HEIGHT}:force_original_aspect_ratio=increase,` +
+    `crop=${OUTPUT_WIDTH}:${OUTPUT_HEIGHT},fps=${OUTPUT_FPS},setsar=1,` +
+    `${FILM_LOOK_FILTER}[${outputLabel}]`
+  );
 }
 
 function formatDuration(value: number) {

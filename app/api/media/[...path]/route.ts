@@ -1,5 +1,8 @@
-import { readOutputMediaFile, resolveOutputMediaPath } from "@/lib/files/media";
-import path from "node:path";
+import {
+  getMediaContentType,
+  readOutputMediaFile,
+  resolveOutputMediaPath,
+} from "@/lib/files/media";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -22,26 +25,11 @@ export async function GET(
       headers: {
         "Cache-Control": "no-store, max-age=0",
         "Content-Length": String(mediaFile.byteLength),
-        "Content-Type": readContentType(filePath),
+        "Content-Type": getMediaContentType(filePath),
       },
     });
   } catch (error) {
     return Response.json({ error: readErrorMessage(error) }, { status: 404 });
-  }
-}
-
-function readContentType(filePath: string) {
-  switch (path.extname(filePath).toLowerCase()) {
-    case ".mp3":
-      return "audio/mpeg";
-    case ".mp4":
-      return "video/mp4";
-    case ".ogg":
-      return "audio/ogg";
-    case ".wav":
-      return "audio/wav";
-    default:
-      return "application/octet-stream";
   }
 }
 

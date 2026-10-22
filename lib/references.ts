@@ -76,7 +76,13 @@ export async function readReferenceImageAsDataUrl(referencePath: string) {
     throw new Error("Референс має бути JPG, PNG або WebP.");
   }
 
-  const contents = await readFile(filePath);
+  const contents = await readFile(filePath).catch((error: unknown) => {
+    if (isNodeError(error) && error.code === "ENOENT") {
+      throw new Error(`Файл референсу не знайдено: ${normalizedPath}`);
+    }
+
+    throw error;
+  });
 
   if (contents.byteLength > MAX_REFERENCE_IMAGE_BYTES) {
     throw new Error("Референс завеликий: максимальний розмір — 10 МБ.");

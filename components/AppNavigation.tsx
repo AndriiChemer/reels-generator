@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 const navigationItems = [
   { href: "/", label: "Проєкт" },
   { href: "/characters", label: "Персонажі" },
-  { href: "/reels/new", label: "Новий Reel" },
+  { href: "/reels", label: "Рілси" },
 ];
 
 export function AppNavigation() {

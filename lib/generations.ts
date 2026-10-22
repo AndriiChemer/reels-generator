@@ -5,7 +5,7 @@ import {
   assertInsideRoot,
 } from "@/lib/files/paths";
 import { roundUsd } from "@/lib/costs";
-import { readJsonFile, writeJsonFile } from "@/lib/files/json";
+import { readJsonFile, updateJsonFile } from "@/lib/files/json";
 import { getReelDirectoryPath, sanitizeReelId } from "@/lib/reels";
 import type { VideoGenerationResult } from "@/lib/ai/video-providers/types";
 import type { GenerationMetadata } from "@/lib/types/generation";
@@ -54,18 +54,17 @@ export async function findGeneration(generationId: string) {
 }
 
 export async function upsertGeneration(generation: GenerationMetadata) {
-  const generations = await listGenerations(generation.reelId);
-  const generationIndex = generations.findIndex(
-    (item) => item.id === generation.id,
-  );
-  const nextGenerations =
-    generationIndex >= 0
-      ? generations.map((item) =>
-          item.id === generation.id ? generation : item,
-        )
-      : [generation, ...generations];
+  await updateJsonFile<GenerationMetadata[]>(
+    getGenerationsFilePath(generation.reelId),
+    (currentGenerations) => {
+      const generations = currentGenerations ?? [];
+      const exists = generations.some((item) => item.id === generation.id);
 
-  await writeJsonFile(getGenerationsFilePath(generation.reelId), nextGenerations);
+      return exists
+        ? generations.map((item) => (item.id === generation.id ? generation : item))
+        : [generation, ...generations];
+    },
+  );
 
   return generation;
 }

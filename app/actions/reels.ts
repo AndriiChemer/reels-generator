@@ -2,61 +2,35 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import {
+  readReelScriptInput,
+  validateReelScriptInput,
+  type ReelScriptFormState,
+} from "@/app/actions/reel-script-form";
+import { listCharacters } from "@/lib/characters";
+import { listReferenceAssets } from "@/lib/references";
 import { createReelDraft } from "@/lib/reels";
-import type { ReelDraftInput } from "@/lib/types/reel";
+import { saveReelScenes } from "@/lib/scenes";
 
-export type ReelDraftFormState = {
-  status: "idle" | "error";
-  message: string;
-  errors?: Partial<Record<keyof ReelDraftInput, string>>;
-};
-
-export async function createReelDraftAction(
-  _previousState: ReelDraftFormState,
+export async function createReelAction(
+  _previousState: ReelScriptFormState,
   formData: FormData,
-): Promise<ReelDraftFormState> {
-  const input = readReelDraftInput(formData);
-  const errors = validateReelDraftInput(input);
+): Promise<ReelScriptFormState> {
+  const input = readReelScriptInput(formData);
+  const errors = validateReelScriptInput(input);
 
   if (Object.keys(errors).length > 0) {
-    return {
-      status: "error",
-      message: "Перевір поля перед створенням Reel.",
-      errors,
-    };
+    return { status: "error", message: "Перевір поля.", errors };
   }
 
+  const [characters, referenceAssets] = await Promise.all([
+    listCharacters(),
+    listReferenceAssets(),
+  ]);
   const reel = await createReelDraft(input);
+
+  await saveReelScenes(reel.id, input.sourceText, characters, referenceAssets);
 
   revalidatePath("/reels/new");
   redirect(`/reels/${reel.id}`);
 }
-
-function readReelDraftInput(formData: FormData): ReelDraftInput {
-  return {
-    title: readTextField(formData, "title"),
-    story: readTextField(formData, "story"),
-    cta: readTextField(formData, "cta"),
-    style: readTextField(formData, "style"),
-  };
-}
-
-function validateReelDraftInput(input: ReelDraftInput) {
-  const errors: Partial<Record<keyof ReelDraftInput, string>> = {};
-
-  if (!input.title) {
-    errors.title = "Вкажи коротку назву Reel.";
-  }
-
-  if (!input.story) {
-    errors.story = "Встав сюжет або чорновий сценарій.";
-  }
-
-  return errors;
-}
-
-function readTextField(formData: FormData, fieldName: string) {
-  const value = formData.get(fieldName);
-  return typeof value === "string" ? value.trim() : "";
-}
-

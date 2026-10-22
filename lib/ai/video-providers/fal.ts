@@ -4,7 +4,7 @@ import type {
   VideoProvider,
   VideoReferenceSet,
 } from "@/lib/ai/video-providers/types";
-import { readReferenceImageAsDataUrl } from "@/lib/references";
+import { readProjectImageAsDataUrl } from "@/lib/files/images";
 import type { GenerationStatus } from "@/lib/types/generation";
 
 const FAL_QUEUE_BASE_URL = "https://queue.fal.run";
@@ -151,10 +151,13 @@ async function buildFalInput(model: string, input: VideoGenerationInput) {
   }
 
   if (!input.startImagePath) {
-    throw new Error("Додай картинку персонажа або #референс для першого кадру.");
+    throw new Error("Спершу згенеруй кадр сцени — він стане першим кадром відео.");
   }
 
-  const startImageUrl = await readReferenceImageAsDataUrl(input.startImagePath);
+  const startImageUrl = await readProjectImageAsDataUrl(input.startImagePath);
+  const endImageUrl = input.endImagePath
+    ? await readProjectImageAsDataUrl(input.endImagePath)
+    : undefined;
   const referenceSets = deduplicateReferenceSets(input.referenceSets || []);
   const elements = await Promise.all(
     referenceSets.map(async (referenceSet) => {
@@ -177,14 +180,13 @@ async function buildFalInput(model: string, input: VideoGenerationInput) {
     ...input.extraInput,
     prompt: buildReferencePrompt(input.prompt, referenceSets),
     start_image_url: startImageUrl,
+    end_image_url: endImageUrl,
     duration: String(clampDuration(input.durationSeconds)),
     aspect_ratio: input.aspectRatio,
     generate_audio: false,
     elements: elements.length > 0 ? elements : undefined,
     shot_type: "customize",
-    negative_prompt:
-      input.negativePrompt ||
-      "cartoon, illustration, anime, CGI, altered face, changed wardrobe, distorted logo, illegible text, blurry UI",
+    negative_prompt: input.negativePrompt,
     cfg_scale: 0.8,
     seed: input.seed,
   };
@@ -197,7 +199,7 @@ async function readReferenceSet(referenceSet: VideoReferenceSet) {
     throw new Error(`Референс «${referenceSet.label}» не містить картинки.`);
   }
 
-  return Promise.all(imagePaths.map(readReferenceImageAsDataUrl));
+  return Promise.all(imagePaths.map(readProjectImageAsDataUrl));
 }
 
 function deduplicateReferenceSets(referenceSets: VideoReferenceSet[]) {
@@ -223,11 +225,11 @@ function buildReferencePrompt(prompt: string, referenceSets: VideoReferenceSet[]
   const bindings = referenceSets
     .map(
       (referenceSet, index) =>
-        `@Element${index + 1} is ${referenceSet.label}. Preserve its exact visual identity, colors, proportions, and recognizable details.`,
+        `@Element${index + 1} is ${referenceSet.label}. Preserve the exact identity, colors, proportions and recognizable details.`,
     )
     .join("\n");
 
-  return `${prompt}\n\nReference fidelity requirements:\n${bindings}\nUse the provided images faithfully. Do not redraw, redesign, or turn them into a cartoon.`;
+  return `${prompt}\n\nReferences:\n${bindings}`;
 }
 
 function clampDuration(durationSeconds: number) {

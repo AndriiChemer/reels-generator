@@ -7,7 +7,17 @@ import {
   withGenerationLog,
 } from "@/lib/generations";
 import { downloadSceneVideo } from "@/lib/files/media";
-import { findReelScene, readReelScenes, updateReelSceneStatus } from "@/lib/scenes";
+import { buildVideoPrompt, getVideoNegativePrompt } from "@/lib/prompts";
+import { listReferenceAssets } from "@/lib/references";
+import { readReelDraft } from "@/lib/reels";
+import { resolveSceneElements } from "@/lib/scene-elements";
+import {
+  findNextScene,
+  findReelScene,
+  readReelScenes,
+  updateReelScene,
+  updateReelSceneStatus,
+} from "@/lib/scenes";
 import type { GenerationMetadata } from "@/lib/types/generation";
 
 export const dynamic = "force-dynamic";
@@ -29,38 +39,46 @@ export async function POST(
     return jsonError("Сцену не знайдено. Спершу збережи блок сцен.", 404);
   }
 
+  if (!scene.keyframe) {
+    return jsonError("Спершу згенеруй кадр сцени — з нього стартує відео.", 422);
+  }
+
+  const keyframe = scene.keyframe;
+
   try {
-    const characters = await listCharacters();
-    const characterReferences = scene.characterIds.flatMap((characterId) => {
-      const character = characters.find(({ id }) => id === characterId);
-      const imagePaths = character?.referenceImages.filter(Boolean) || [];
+    const [reel, characters, referenceAssets] = await Promise.all([
+      readReelDraft(reelId),
+      listCharacters(),
+      listReferenceAssets(),
+    ]);
 
-      return imagePaths.length > 0
-        ? [{ label: `персонаж ${character?.name || characterId}`, imagePaths }]
-        : [];
-    });
-    const assetReferences = scene.referencePaths.map((referencePath, index) => ({
-      label: `референс #${scene.referenceNames[index] || referenceNameFromPath(referencePath)}`,
-      imagePaths: [referencePath],
-    }));
-    const referenceSets = [...characterReferences, ...assetReferences];
-    const startImagePath =
-      assetReferences[0]?.imagePaths[0] || characterReferences[0]?.imagePaths[0];
-
-    if (!startImagePath) {
-      throw new Error(
-        "Для генерації з максимальною схожістю додай @персонажа або #референс із картинкою.",
-      );
-    }
+    const elements = resolveSceneElements(scene, characters, referenceAssets);
+    const nextScene = findNextScene(scenesDocument, scene);
+    // A "continue" transition means the next shot starts where this one ends,
+    // so this video should end on the next scene keyframe.
+    const endImagePath =
+      nextScene?.transition === "continue"
+        ? nextScene.keyframe?.outputPath
+        : undefined;
 
     const provider = getVideoProvider();
     const result = await provider.generateVideo({
-      prompt: scene.videoPrompt || scene.rawText,
+      prompt: buildVideoPrompt({ scene, reel: reel ?? {}, elements }),
+      negativePrompt: getVideoNegativePrompt(reel?.artStyle),
       durationSeconds: scene.durationSeconds,
       aspectRatio: "9:16",
-      startImagePath,
-      referenceSets,
+      startImagePath: keyframe.outputPath,
+      endImagePath,
+      referenceSets: elements.map((element) => ({
+        label: element.name,
+        imagePaths: element.imagePaths,
+      })),
     });
+
+    await updateReelScene(reelId, sceneId, {
+      videoKeyframeVersion: keyframe.generatedAt,
+    });
+
     const generation = createGenerationFromResult({
       reelId,
       result,
@@ -106,12 +124,6 @@ export async function POST(
 
     return Response.json({ generation, error: generation.errorMessage }, { status: 502 });
   }
-}
-
-function referenceNameFromPath(referencePath: string) {
-  const filename = referencePath.split("/").at(-1) || "reference";
-
-  return filename.replace(/\.[^.]+$/, "");
 }
 
 function jsonError(message: string, status: number) {

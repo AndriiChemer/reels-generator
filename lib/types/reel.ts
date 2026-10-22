@@ -1,9 +1,29 @@
+/**
+ * How the picture is rendered. "reference" copies the look of the character
+ * reference images, so stylized characters stay stylized.
+ */
+export type ReelArtStyle = "reference" | "animated3d" | "photoreal";
+
 export type ReelDraft = {
   id: string;
   title: string;
+  /** Short idea of the reel: what happens and why. */
   story: string;
   cta?: string;
+  /** Rendering style of every frame. Undefined means "reference". */
+  artStyle?: ReelArtStyle;
+  /** Visual look shared by every scene: camera, light, color grade. */
   style?: string;
+  /** Where the action happens. Repeated in every keyframe for continuity. */
+  setting?: string;
+  /** What each character wears in this reel. */
+  wardrobe?: string;
+  /** Character whose voice reads every "Voiceover" line of this reel. */
+  narratorCharacterId?: string;
+  /** Delivery of the narrator for the whole reel. Undefined means "calm". */
+  voiceMood?: VoiceoverEmotion;
+  /** Speech speed override; undefined uses the mood default. */
+  voiceSpeed?: number;
   finalOutputPath?: string;
   finalRenderedAt?: string;
   finalRenderError?: string;
@@ -12,8 +32,18 @@ export type ReelDraft = {
   updatedAt: string;
 };
 
+export type ReelLookInput = Partial<
+  Pick<ReelDraft, "artStyle" | "style" | "setting" | "wardrobe">
+>;
+
 export type ReelDraftInput = Pick<ReelDraft, "title" | "story"> &
-  Partial<Pick<ReelDraft, "cta" | "style">>;
+  ReelLookInput &
+  Partial<Pick<ReelDraft, "narratorCharacterId" | "voiceMood" | "voiceSpeed">>;
+
+export type ReelScriptInput = ReelDraftInput & {
+  /** Scene script with @character and #reference mentions. */
+  sourceText: string;
+};
 
 export type ReelSceneStatus =
   | "draft"
@@ -66,6 +96,8 @@ export type SceneVoiceoverOutput = {
   emotion: VoiceoverEmotion;
   speechRate: number;
   speedAppliedNatively?: boolean;
+  /** Real length of the generated clip, if ffprobe is available. */
+  durationSeconds?: number;
   characterCost?: number;
   generatedAt: string;
 };
@@ -86,11 +118,35 @@ export type ReelBackgroundAudioOutput = {
   generatedAt: string;
 };
 
+/**
+ * How a scene connects to the previous one.
+ * - cut: a normal edit, new camera angle.
+ * - continue: the camera flows from the previous shot without a cut.
+ */
+export type SceneTransition = "cut" | "continue";
+
+export type SceneKeyframe = {
+  provider: "fal";
+  model: string;
+  outputPath: string;
+  prompt: string;
+  /** generatedAt of the previous scene keyframe used as a continuity reference. */
+  previousKeyframeVersion?: string;
+  /** Reel look (art style, location, wardrobe, style) the keyframe was made with. */
+  lookVersion?: string;
+  estimatedCostUsd?: number;
+  generatedAt: string;
+};
+
 export type ReelScene = {
   id: string;
   order: number;
   rawText: string;
   durationSeconds: number;
+  /** Seconds from the start of the reel where this scene begins. */
+  timelineStartSeconds?: number;
+  transition?: SceneTransition;
+  /** Clean scene description without durations, captions or audio. */
   videoPrompt: string;
   audioPlan: SceneAudioPlan;
   characterNames: string[];
@@ -98,7 +154,10 @@ export type ReelScene = {
   referenceNames: string[];
   referencePaths: string[];
   status: ReelSceneStatus;
+  keyframe?: SceneKeyframe;
   outputPath?: string;
+  /** keyframe.generatedAt that the current video was generated from. */
+  videoKeyframeVersion?: string;
   audioOutput?: SceneAudioOutput;
   voiceoverOutput?: SceneVoiceoverOutput;
   previewOutputPath?: string;
@@ -110,8 +169,4 @@ export type ReelScenesDocument = {
   sourceText: string;
   scenes: ReelScene[];
   updatedAt: string;
-};
-
-export type ReelScenesInput = {
-  sourceText: string;
 };

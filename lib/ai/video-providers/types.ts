@@ -7,8 +7,10 @@ export type VideoGenerationInput = {
   prompt: string;
   durationSeconds: number;
   aspectRatio: "9:16";
-  /** The composition image used as the first frame for image-to-video. */
+  /** First frame (scene keyframe). Project image path. */
   startImagePath?: string;
+  /** Optional last frame, e.g. the next scene keyframe for a seamless transition. */
+  endImagePath?: string;
   /** Character, product, UI, or logo reference image groups for the provider. */
   referenceSets?: VideoReferenceSet[];
   negativePrompt?: string;

@@ -1,20 +1,29 @@
 import { getAudioProvider } from "@/lib/ai/audio-providers";
 import { listCharacters } from "@/lib/characters";
-import { saveSceneVoiceover } from "@/lib/files/media";
+import { probeDurationSeconds } from "@/lib/ffmpeg/probeDuration";
+import { resolveOutputMediaPath, saveSceneVoiceover } from "@/lib/files/media";
+import { readReelDraft } from "@/lib/reels";
 import {
+  findNextScene,
+  findPreviousScene,
   findReelScene,
   getSceneVoiceoverCue,
   readReelScenes,
   updateReelSceneVoiceover,
 } from "@/lib/scenes";
-import type { ReelScene } from "@/lib/types/reel";
-import type { VoiceoverEmotion } from "@/lib/types/reel";
+import type { ReelScene, SceneVoiceoverOutput } from "@/lib/types/reel";
+import { getReelVoiceSettings, getVoiceSeed } from "@/lib/voice";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
+/**
+ * Voices the "Voiceover" line of one scene. Every line of a reel uses the same
+ * narrator, mood, speed and seed, and gets the neighbouring lines as context,
+ * so separate clips sound like one continuous read.
+ */
 export async function POST(
-  request: Request,
+  _request: Request,
   {
     params,
   }: {
@@ -22,10 +31,13 @@ export async function POST(
   },
 ) {
   const { reelId, sceneId } = await params;
-  const scenesDocument = await readReelScenes(reelId);
+  const [reel, scenesDocument] = await Promise.all([
+    readReelDraft(reelId),
+    readReelScenes(reelId),
+  ]);
   const scene = findReelScene(scenesDocument, sceneId);
 
-  if (!scene) {
+  if (!reel || !scene) {
     return jsonError("Сцену не знайдено.", 404);
   }
 
@@ -33,25 +45,24 @@ export async function POST(
 
   if (!cue) {
     return jsonError(
-      "У блоці Звук не знайдено рядок Voiceover із текстом для озвучення.",
+      "У блоці «Звук» немає рядка Voiceover із текстом для озвучення.",
       422,
     );
   }
 
-  const settings = await readVoiceoverSettings(request);
-
   try {
-    const speaker = await getVoiceoverSpeaker(scene);
+    const speaker = await getVoiceoverSpeaker(scene, reel.narratorCharacterId);
+    const voice = getReelVoiceSettings(reel);
     const result = await getAudioProvider().generateSpeech({
       text: cue.text,
       voiceId: speaker.voiceId,
-      voiceSettings: {
-        ...getVoiceSettings(settings.emotion),
-        speed: settings.speechRate,
-      },
+      voiceSettings: voice,
+      previousText: readVoiceoverText(findPreviousScene(scenesDocument, scene)),
+      nextText: readVoiceoverText(findNextScene(scenesDocument, scene)),
+      seed: getVoiceSeed(reelId),
     });
     const outputPath = await saveSceneVoiceover({ reelId, sceneId, result });
-    const voiceoverOutput = {
+    const voiceoverOutput: SceneVoiceoverOutput = {
       provider: result.provider,
       model: result.model,
       outputPath,
@@ -61,91 +72,33 @@ export async function POST(
       speakerVoiceId: speaker.voiceId,
       startSeconds: cue.startSeconds,
       endSeconds: cue.endSeconds,
-      emotion: settings.emotion,
-      speechRate: settings.speechRate,
+      emotion: voice.mood,
+      speechRate: voice.speed,
       speedAppliedNatively: true,
+      durationSeconds: await probeDurationSeconds(resolveOutputMediaPath(outputPath)),
       characterCost: result.characterCost,
       generatedAt: new Date().toISOString(),
-    } satisfies NonNullable<ReelScene["voiceoverOutput"]>;
-    const updatedScene = await updateReelSceneVoiceover(
-      reelId,
-      sceneId,
-      voiceoverOutput,
-    );
+    };
 
-    return Response.json({ voiceoverOutput, scene: updatedScene }, { status: 201 });
+    await updateReelSceneVoiceover(reelId, sceneId, voiceoverOutput);
+
+    return Response.json({ voiceoverOutput }, { status: 201 });
   } catch (error) {
     return jsonError(readErrorMessage(error), 502);
   }
 }
 
-type VoiceoverSettings = {
-  emotion: VoiceoverEmotion;
-  speechRate: number;
-};
-
-async function readVoiceoverSettings(request: Request): Promise<VoiceoverSettings> {
-  let payload: unknown;
-
-  try {
-    payload = await request.json();
-  } catch {
-    payload = null;
-  }
-
-  const value = isRecord(payload) ? payload : {};
-  const emotion = isVoiceoverEmotion(value.emotion) ? value.emotion : "neutral";
-  const speechRate = normalizeSpeechRate(value.speechRate);
-
-  return { emotion, speechRate };
+function readVoiceoverText(scene: ReelScene | null) {
+  return scene ? getSceneVoiceoverCue(scene)?.text : undefined;
 }
 
-function getVoiceSettings(emotion: VoiceoverEmotion) {
-  switch (emotion) {
-    case "sad":
-      return { similarityBoost: 0.75, stability: 0.6, style: 0 };
-    case "warm":
-      return { similarityBoost: 0.75, stability: 0.55, style: 0 };
-    case "calm":
-      return { similarityBoost: 0.75, stability: 0.7, style: 0 };
-    case "energetic":
-      return { similarityBoost: 0.75, stability: 0.4, style: 0 };
-    case "neutral":
-    default:
-      return { similarityBoost: 0.75, stability: 0.55, style: 0 };
-  }
-}
-
-function normalizeSpeechRate(value: unknown) {
-  const rate = typeof value === "number" ? value : 1;
-
-  if (!Number.isFinite(rate)) {
-    return 1;
-  }
-
-  return Math.min(Math.max(rate, 0.75), 1.25);
-}
-
-function isVoiceoverEmotion(value: unknown): value is VoiceoverEmotion {
-  return (
-    value === "neutral" ||
-    value === "sad" ||
-    value === "warm" ||
-    value === "calm" ||
-    value === "energetic"
-  );
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
-
-async function getVoiceoverSpeaker(scene: ReelScene) {
-  const speakerId = scene.characterIds[0];
+/** The reel narrator reads every line; without one, the first @character does. */
+async function getVoiceoverSpeaker(scene: ReelScene, narratorCharacterId?: string) {
+  const speakerId = narratorCharacterId || scene.characterIds[0];
 
   if (!speakerId) {
     throw new Error(
-      "Для озвучення додай @персонажа до сцени та вкажи йому Voice ID у ElevenLabs.",
+      "Обери «Голос за кадром» у вигляді рілса або додай @персонажа до сцени.",
     );
   }
 

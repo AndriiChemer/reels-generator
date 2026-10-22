@@ -33,6 +33,20 @@ export function CharacterForm({ character }: CharacterFormProps) {
       />
 
       <TextAreaField
+        label="Зовнішність"
+        name="appearance"
+        placeholder="Late 20s, shoulder-length brown hair, freckles, slim build"
+        value={character?.appearance}
+      />
+
+      <TextField
+        label="Одяг за замовчуванням"
+        name="clothes"
+        placeholder="Використовується, якщо в рілсі не задано інший одяг"
+        value={character?.clothes}
+      />
+
+      <TextAreaField
         error={state.errors?.referenceImagesText}
         label="Референс-зображення"
         name="referenceImagesText"

@@ -137,6 +137,9 @@ export class ElevenLabsAudioProvider implements AudioProvider {
             speed: input.voiceSettings?.speed ?? 1,
             use_speaker_boost: true,
           },
+          previous_text: input.previousText || undefined,
+          next_text: input.nextText || undefined,
+          seed: input.seed,
         }),
         headers: {
           "Content-Type": "application/json",

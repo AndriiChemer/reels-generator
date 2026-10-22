@@ -25,6 +25,38 @@ export async function writeJsonFile<T>(filePath: string, data: T) {
   await rename(temporaryPath, filePath);
 }
 
+const pendingFileUpdates = new Map<string, Promise<unknown>>();
+
+/**
+ * Read-modify-write for one JSON file. Updates of the same file run one after
+ * another, so parallel scene generations do not overwrite each other.
+ */
+export async function updateJsonFile<T>(
+  filePath: string,
+  update: (current: T | null) => T,
+): Promise<T> {
+  const previousUpdate = pendingFileUpdates.get(filePath) ?? Promise.resolve();
+  const nextUpdate = previousUpdate
+    .catch(() => undefined)
+    .then(async () => {
+      const nextData = update(await readJsonFile<T>(filePath));
+
+      await writeJsonFile(filePath, nextData);
+
+      return nextData;
+    });
+
+  pendingFileUpdates.set(filePath, nextUpdate);
+
+  try {
+    return await nextUpdate;
+  } finally {
+    if (pendingFileUpdates.get(filePath) === nextUpdate) {
+      pendingFileUpdates.delete(filePath);
+    }
+  }
+}
+
 export async function readJsonFilesFromDir<T>(directoryPath: string) {
   try {
     const entries = await readdir(directoryPath, { withFileTypes: true });

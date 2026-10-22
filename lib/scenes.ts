@@ -1,17 +1,21 @@
 import path from "node:path";
-import { readJsonFile, writeJsonFile } from "@/lib/files/json";
+import { readJsonFile, updateJsonFile, writeJsonFile } from "@/lib/files/json";
+import { cleanSceneDescription } from "@/lib/prompts";
 import { findReferencePath, type ReferenceAsset } from "@/lib/references";
 import {
   getReelDirectoryPath,
   readReelDraft,
   sanitizeReelId,
 } from "@/lib/reels";
+import { normalizeMention } from "@/lib/scene-elements";
 import type { Character } from "@/lib/types/character";
 import type { GenerationStatus } from "@/lib/types/generation";
 import type {
   ReelScene,
   ReelScenesDocument,
   SceneAudioOutput,
+  SceneKeyframe,
+  SceneTransition,
   SceneVoiceoverOutput,
 } from "@/lib/types/reel";
 
@@ -36,6 +40,30 @@ export function findReelScene(
   return scenesDocument?.scenes.find((scene) => scene.id === sceneId) ?? null;
 }
 
+/** The scene right before this one, if any. */
+export function findPreviousScene(
+  scenesDocument: ReelScenesDocument | null,
+  scene: ReelScene,
+) {
+  return (
+    scenesDocument?.scenes.find(({ order }) => order === scene.order - 1) ?? null
+  );
+}
+
+/** The scene right after this one, if any. */
+export function findNextScene(
+  scenesDocument: ReelScenesDocument | null,
+  scene: ReelScene,
+) {
+  return (
+    scenesDocument?.scenes.find(({ order }) => order === scene.order + 1) ?? null
+  );
+}
+
+/**
+ * Parses the script into scenes. Scenes whose text did not change keep their
+ * keyframe, video and audio, so editing one scene never discards the rest.
+ */
 export async function saveReelScenes(
   reelId: string,
   sourceText: string,
@@ -48,9 +76,13 @@ export async function saveReelScenes(
     throw new Error("Reel draft does not exist.");
   }
 
+  const previousDocument = await readReelScenes(reelId);
+  const scenes = parseManualScenes(sourceText, characters, referenceAssets).map(
+    (scene) => keepGeneratedMedia(scene, previousDocument),
+  );
   const document: ReelScenesDocument = {
     sourceText: sourceText.trim(),
-    scenes: parseManualScenes(sourceText, characters, referenceAssets),
+    scenes,
     updatedAt: new Date().toISOString(),
   };
 
@@ -68,18 +100,16 @@ export function getSceneWarnings(
     return [];
   }
 
-  return scenesDocument.scenes
-    .map((scene): SceneWarning => {
-      const knownCharacterNames = new Set(
-        characters.map((character) => normalizeMention(character.name)),
-      );
-      const knownReferenceNames = new Set(
-        referenceAssets.map((referenceAsset) =>
-          normalizeMention(referenceAsset.name),
-        ),
-      );
+  const knownCharacterNames = new Set(
+    characters.map((character) => normalizeMention(character.name)),
+  );
+  const knownReferenceNames = new Set(
+    referenceAssets.map((referenceAsset) => normalizeMention(referenceAsset.name)),
+  );
 
-      return {
+  return scenesDocument.scenes
+    .map(
+      (scene): SceneWarning => ({
         sceneId: scene.id,
         sceneOrder: scene.order,
         unknownCharacterNames: scene.characterNames.filter(
@@ -88,8 +118,8 @@ export function getSceneWarnings(
         unknownReferenceNames: scene.referenceNames.filter(
           (name) => !knownReferenceNames.has(normalizeMention(name)),
         ),
-      };
-    })
+      }),
+    )
     .filter(
       (warning) =>
         warning.unknownCharacterNames.length > 0 ||
@@ -97,144 +127,92 @@ export function getSceneWarnings(
     );
 }
 
-export async function updateReelSceneStatus(
+/**
+ * Updates one scene inside scenes.json. Returns the updated scene or null if
+ * the scene does not exist.
+ */
+export async function updateReelScene(
+  reelId: string,
+  sceneId: string,
+  patch: Partial<ReelScene> | ((scene: ReelScene) => Partial<ReelScene>),
+) {
+  let updatedScene: ReelScene | null = null;
+
+  await updateJsonFile<ReelScenesDocument>(
+    getReelScenesFilePath(reelId),
+    (document) => {
+      if (!document) {
+        throw new Error("Сцени для цього Reel ще не збережені.");
+      }
+
+      return {
+        ...document,
+        scenes: document.scenes.map((scene) => {
+          if (scene.id !== sceneId) {
+            return scene;
+          }
+
+          const changes = typeof patch === "function" ? patch(scene) : patch;
+          updatedScene = { ...scene, ...changes };
+
+          return updatedScene;
+        }),
+        updatedAt: new Date().toISOString(),
+      };
+    },
+  );
+
+  return updatedScene as ReelScene | null;
+}
+
+export function updateReelSceneStatus(
   reelId: string,
   sceneId: string,
   status: GenerationStatus,
   outputPath?: string,
 ) {
-  const scenesDocument = await readReelScenes(reelId);
-
-  if (!scenesDocument) {
-    return null;
-  }
-
-  const scene = findReelScene(scenesDocument, sceneId);
-
-  if (!scene) {
-    return null;
-  }
-
-  const nextScene = {
-    ...scene,
+  return updateReelScene(reelId, sceneId, (scene) => ({
     status,
     outputPath: outputPath ?? scene.outputPath,
-  };
-  const nextDocument: ReelScenesDocument = {
-    ...scenesDocument,
-    scenes: scenesDocument.scenes.map((currentScene) =>
-      currentScene.id === sceneId ? nextScene : currentScene,
-    ),
-    updatedAt: new Date().toISOString(),
-  };
-
-  await writeJsonFile(getReelScenesFilePath(reelId), nextDocument);
-
-  return nextScene;
+  }));
 }
 
-export async function updateReelSceneAudio(
+export function updateReelSceneKeyframe(
+  reelId: string,
+  sceneId: string,
+  keyframe: SceneKeyframe,
+) {
+  return updateReelScene(reelId, sceneId, { keyframe });
+}
+
+export function updateReelSceneAudio(
   reelId: string,
   sceneId: string,
   audioOutput: SceneAudioOutput,
 ) {
-  const scenesDocument = await readReelScenes(reelId);
-
-  if (!scenesDocument) {
-    return null;
-  }
-
-  const scene = findReelScene(scenesDocument, sceneId);
-
-  if (!scene) {
-    return null;
-  }
-
-  const nextScene: ReelScene = {
-    ...scene,
-    audioOutput,
-  };
-  const nextDocument: ReelScenesDocument = {
-    ...scenesDocument,
-    scenes: scenesDocument.scenes.map((currentScene) =>
-      currentScene.id === sceneId ? nextScene : currentScene,
-    ),
-    updatedAt: new Date().toISOString(),
-  };
-
-  await writeJsonFile(getReelScenesFilePath(reelId), nextDocument);
-
-  return nextScene;
+  return updateReelScene(reelId, sceneId, { audioOutput });
 }
 
-export async function updateReelSceneVoiceover(
+export function updateReelSceneVoiceover(
   reelId: string,
   sceneId: string,
   voiceoverOutput: SceneVoiceoverOutput,
 ) {
-  const scenesDocument = await readReelScenes(reelId);
-
-  if (!scenesDocument) {
-    return null;
-  }
-
-  const scene = findReelScene(scenesDocument, sceneId);
-
-  if (!scene) {
-    return null;
-  }
-
-  const nextScene: ReelScene = {
-    ...scene,
-    voiceoverOutput,
-  };
-  const nextDocument: ReelScenesDocument = {
-    ...scenesDocument,
-    scenes: scenesDocument.scenes.map((currentScene) =>
-      currentScene.id === sceneId ? nextScene : currentScene,
-    ),
-    updatedAt: new Date().toISOString(),
-  };
-
-  await writeJsonFile(getReelScenesFilePath(reelId), nextDocument);
-
-  return nextScene;
+  return updateReelScene(reelId, sceneId, { voiceoverOutput });
 }
 
-export async function updateReelScenePreview(
+export function updateReelScenePreview(
   reelId: string,
   sceneId: string,
   preview: { outputPath?: string; error?: string },
 ) {
-  const scenesDocument = await readReelScenes(reelId);
-
-  if (!scenesDocument) {
-    return null;
-  }
-
-  const scene = findReelScene(scenesDocument, sceneId);
-
-  if (!scene) {
-    return null;
-  }
-
-  const nextScene: ReelScene = {
-    ...scene,
+  return updateReelScene(reelId, sceneId, (scene) => ({
     previewOutputPath: preview.outputPath ?? scene.previewOutputPath,
-    previewRenderedAt: preview.outputPath ? new Date().toISOString() : scene.previewRenderedAt,
+    previewRenderedAt: preview.outputPath
+      ? new Date().toISOString()
+      : scene.previewRenderedAt,
     previewRenderError: preview.error,
-  };
-  const nextDocument: ReelScenesDocument = {
-    ...scenesDocument,
-    scenes: scenesDocument.scenes.map((currentScene) =>
-      currentScene.id === sceneId ? nextScene : currentScene,
-    ),
-    updatedAt: new Date().toISOString(),
-  };
-
-  await writeJsonFile(getReelScenesFilePath(reelId), nextDocument);
-
-  return nextScene;
+  }));
 }
 
 export type SceneVoiceoverCue = {
@@ -261,11 +239,14 @@ export function getSceneVoiceoverCue(
     return null;
   }
 
+  const toSceneTime = createSceneTimeConverter(scene);
   const startSeconds = clampCueTime(
-    parseCueTime(match[1]) ?? 0,
+    toSceneTime(parseCueTime(match[1]) ?? 0),
     scene.durationSeconds,
   );
-  const requestedEndSeconds = parseCueTime(match[2]) ?? scene.durationSeconds;
+  const requestedEndSeconds = match[2]
+    ? toSceneTime(parseCueTime(match[2]) ?? scene.durationSeconds)
+    : scene.durationSeconds;
   const endSeconds = Math.max(
     startSeconds,
     clampCueTime(requestedEndSeconds, scene.durationSeconds),
@@ -289,21 +270,25 @@ function parseManualScenes(
   characters: Character[],
   referenceAssets: ReferenceAsset[],
 ) {
+  let timelineStartSeconds = 0;
+
   return splitSceneBlocks(sourceText).map((rawText, index): ReelScene => {
     const { audioText, videoText } = splitAudioSection(rawText);
     const durationSeconds = parseDurationSeconds(rawText);
     const characterNames = uniqueValues(extractCharacterMentions(rawText));
     const referenceNames = uniqueValues(extractReferenceMentions(rawText));
-
-    return {
+    const scene: ReelScene = {
       id: `scene-${String(index + 1).padStart(2, "0")}`,
       order: index + 1,
       rawText,
       durationSeconds,
-      videoPrompt: videoText,
+      timelineStartSeconds,
+      transition: parseTransition(rawText),
+      videoPrompt: cleanSceneDescription(videoText),
       audioPlan: buildSceneAudioPlan({
         audioText,
         durationSeconds,
+        timelineStartSeconds,
         videoText,
       }),
       characterNames,
@@ -316,7 +301,60 @@ function parseManualScenes(
         ),
       status: "draft",
     };
+
+    timelineStartSeconds += durationSeconds;
+
+    return scene;
   });
+}
+
+function keepGeneratedMedia(
+  scene: ReelScene,
+  previousDocument: ReelScenesDocument | null,
+): ReelScene {
+  const previousScene = previousDocument?.scenes.find(
+    ({ id, rawText }) => id === scene.id && rawText === scene.rawText,
+  );
+
+  if (!previousScene) {
+    return scene;
+  }
+
+  return {
+    ...scene,
+    status: previousScene.status,
+    keyframe: previousScene.keyframe,
+    outputPath: previousScene.outputPath,
+    videoKeyframeVersion: previousScene.videoKeyframeVersion,
+    audioOutput: previousScene.audioOutput,
+    voiceoverOutput: previousScene.voiceoverOutput,
+    previewOutputPath: previousScene.previewOutputPath,
+    previewRenderedAt: previousScene.previewRenderedAt,
+    previewRenderError: previousScene.previewRenderError,
+  };
+}
+
+function parseTransition(rawText: string): SceneTransition {
+  const match = rawText.match(/^\s*(?:transition|перехід)\s*:\s*(.+)$/imu);
+
+  return match && /(continue|seamless|продовж|без\s+склейки)/iu.test(match[1])
+    ? "continue"
+    : "cut";
+}
+
+/**
+ * Scripts often use reel time ("8.2–11.8") instead of scene time
+ * ("0.2–3.8"). Converts reel time to scene time when it is clearly reel time.
+ */
+function createSceneTimeConverter(
+  scene: Pick<ReelScene, "durationSeconds" | "timelineStartSeconds">,
+) {
+  const offset = scene.timelineStartSeconds ?? 0;
+
+  return (seconds: number) =>
+    offset > 0 && seconds >= offset && seconds > scene.durationSeconds
+      ? Math.round((seconds - offset) * 100) / 100
+      : seconds;
 }
 
 function splitAudioSection(rawText: string) {
@@ -349,10 +387,12 @@ function splitAudioSection(rawText: string) {
 function buildSceneAudioPlan({
   audioText,
   durationSeconds,
+  timelineStartSeconds,
   videoText,
 }: {
   audioText: string;
   durationSeconds: number;
+  timelineStartSeconds: number;
   videoText: string;
 }): ReelScene["audioPlan"] {
   const trimmedAudioText = audioText.trim();
@@ -362,7 +402,11 @@ function buildSceneAudioPlan({
 
     return {
       source: "auto",
-      prompt: buildAutomaticAudioPrompt(videoText, durationSeconds, speechPolicy),
+      prompt: buildAutomaticAudioPrompt(
+        cleanSceneDescription(videoText),
+        durationSeconds,
+        speechPolicy,
+      ),
       durationSeconds,
       speechPolicy,
       ambiencePrompt: "натуральна атмосфера сцени без різких шумів",
@@ -371,7 +415,17 @@ function buildSceneAudioPlan({
     };
   }
 
-  const cues = parseAudioCues(trimmedAudioText);
+  const toSceneTime = createSceneTimeConverter({
+    durationSeconds,
+    timelineStartSeconds,
+  });
+  const cues = parseAudioCues(trimmedAudioText).map((cue) => ({
+    ...cue,
+    startSeconds:
+      cue.startSeconds === undefined ? undefined : toSceneTime(cue.startSeconds),
+    endSeconds:
+      cue.endSeconds === undefined ? undefined : toSceneTime(cue.endSeconds),
+  }));
   const speechPolicy = detectSpeechPolicy(trimmedAudioText);
   const ambiencePrompt = joinCueDescriptions(
     cues.filter((cue) => isAmbienceCue(cue.description)),
@@ -603,9 +657,11 @@ function resolveCharacterIds(characterNames: string[], characters: Character[]) 
 }
 
 function parseDurationSeconds(rawText: string) {
-  const durationMatch = rawText.match(
-    /(\d+(?:[.,]\d+)?)\s*(?:s|sec|secs|seconds?|сек|секунд[аи]?)/iu,
-  );
+  const durationMatch =
+    rawText.match(/(?:duration|тривалість)\s*:\s*(\d+(?:[.,]\d+)?)/iu) ??
+    rawText.match(
+      /(\d+(?:[.,]\d+)?)\s*(?:s|sec|secs|seconds?|сек|секунд[аи]?)(?!\p{L})/iu,
+    );
 
   if (!durationMatch) {
     return DEFAULT_SCENE_DURATION_SECONDS;
@@ -633,8 +689,4 @@ function uniqueValues(values: string[]) {
     seenValues.add(normalizedValue);
     return true;
   });
-}
-
-function normalizeMention(value: string) {
-  return value.trim().toLowerCase();
 }

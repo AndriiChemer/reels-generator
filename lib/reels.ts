@@ -21,10 +21,7 @@ export async function createReelDraft(input: ReelDraftInput) {
   const id = await createUniqueReelId(now);
   const reel: ReelDraft = {
     id,
-    title: input.title.trim(),
-    story: input.story.trim(),
-    cta: optionalText(input.cta),
-    style: optionalText(input.style),
+    ...normalizeReelInput(input),
     createdAt: now,
     updatedAt: now,
   };
@@ -32,6 +29,25 @@ export async function createReelDraft(input: ReelDraftInput) {
   await writeJsonFile(getReelFilePath(id), reel);
 
   return reel;
+}
+
+/** Updates title, idea and the shared look of a reel. */
+export async function updateReelDraft(reelId: string, input: ReelDraftInput) {
+  const reel = await readReelDraft(reelId);
+
+  if (!reel) {
+    throw new Error("Reel draft does not exist.");
+  }
+
+  const nextReel: ReelDraft = {
+    ...reel,
+    ...normalizeReelInput(input),
+    updatedAt: new Date().toISOString(),
+  };
+
+  await writeJsonFile(getReelFilePath(reelId), nextReel);
+
+  return nextReel;
 }
 
 export async function readReelDraft(reelId: string) {
@@ -159,6 +175,20 @@ async function createUniqueReelId(timestamp: string) {
   }
 
   return id;
+}
+
+function normalizeReelInput(input: ReelDraftInput) {
+  return {
+    title: input.title.trim(),
+    story: input.story.trim(),
+    artStyle: input.artStyle ?? "reference",
+    style: optionalText(input.style),
+    setting: optionalText(input.setting),
+    wardrobe: optionalText(input.wardrobe),
+    narratorCharacterId: optionalText(input.narratorCharacterId),
+    voiceMood: input.voiceMood,
+    voiceSpeed: input.voiceSpeed,
+  };
 }
 
 function optionalText(value: string | undefined) {

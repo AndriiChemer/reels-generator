@@ -13,15 +13,13 @@ export default async function CharactersPage() {
     <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
       <section className="grid gap-5">
         <div className="rounded-lg border border-[var(--border)] bg-[var(--panel)] p-6">
-          <p className="text-sm font-medium text-[var(--accent-strong)]">
-            Крок 04
-          </p>
-          <h1 className="mt-2 text-3xl font-semibold tracking-normal">
+          <h1 className="text-3xl font-semibold tracking-normal">
             Персонажі
           </h1>
           <p className="mt-3 max-w-2xl text-base leading-7 text-[var(--muted)]">
-            Створи повторюваних персонажів, яких пізніше можна буде привʼязати
-            до сцен, референс-зображень і відео-провайдера.
+            Персонаж = фото + короткий опис зовнішності. У сценах згадуй його
+            як @імʼя — фото піде референсом у кожен кадр і відео. Найкраще
+            працюють 2–3 фото з різних ракурсів.
           </p>
         </div>
 

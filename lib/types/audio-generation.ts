@@ -29,6 +29,11 @@ export type SpeechGenerationInput = {
     style: number;
     speed: number;
   };
+  /** Neighbouring lines, so separate clips sound like one continuous read. */
+  previousText?: string;
+  nextText?: string;
+  /** Same seed for every line of a reel keeps the delivery consistent. */
+  seed?: number;
 };
 
 export type AudioGenerationResult = {

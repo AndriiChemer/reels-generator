@@ -7,6 +7,7 @@ export const OUTPUT_AUDIO_DIR = path.join(OUTPUTS_DIR, "audio");
 export const OUTPUT_AUDIO_REELS_DIR = path.join(OUTPUT_AUDIO_DIR, "reels");
 export const OUTPUT_AUDIO_SCENES_DIR = path.join(OUTPUT_AUDIO_DIR, "scenes");
 export const OUTPUT_AUDIO_VOICEOVERS_DIR = path.join(OUTPUT_AUDIO_DIR, "voiceovers");
+export const OUTPUT_KEYFRAMES_DIR = path.join(OUTPUTS_DIR, "keyframes");
 export const OUTPUT_SCENE_PREVIEWS_DIR = path.join(OUTPUTS_DIR, "previews");
 export const OUTPUT_SCENES_DIR = path.join(OUTPUTS_DIR, "scenes");
 export const OUTPUT_REELS_DIR = path.join(OUTPUTS_DIR, "reels");
